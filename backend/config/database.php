@@ -3,6 +3,13 @@
 return [
     'default' => env('DB_CONNECTION', 'pgsql'),
     'connections' => [
+        'sqlite' => [
+            'driver' => 'sqlite',
+            'url' => env('DB_URL'),
+            'database' => env('DB_DATABASE', ':memory:'),
+            'prefix' => '',
+            'foreign_key_constraints' => env('DB_FOREIGN_KEYS', true),
+        ],
         'pgsql' => [
             'driver' => 'pgsql',
             'url' => env('DB_URL'),

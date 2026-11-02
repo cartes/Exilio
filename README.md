@@ -14,8 +14,10 @@ Monorepo experimental para explorar agentes artificiales con memoria persistente
 1. Copia `.env.example` a `.env` y ajusta `DB_PASSWORD` para tu entorno local.
 2. Inicia PostgreSQL: `docker compose up -d postgres`.
 3. Instala backend: `cd backend && composer install && cp .env.example .env && php artisan key:generate && php artisan migrate`.
-4. Ejecuta API: `cd backend && php artisan serve`.
-5. Ejecuta pruebas del motor: `cd cognitive-engine && python3.12 -m unittest discover -s tests -v`.
+4. Ejecuta pruebas de backend: `cd backend && composer test`.
+5. Ejecuta API: `cd backend && php artisan serve`.
+6. Verifica motor cognitivo: `cd cognitive-engine && python3.12 main.py`.
+7. Ejecuta pruebas del motor: `cd cognitive-engine && python3.12 -m unittest discover -s tests -v`.
 
 El servicio PostgreSQL usa la imagen pgvector para dejar disponible la futura extensión; todavía no se habilita ni se usa vectorización. El frontend está reservado para una fase posterior.
 
