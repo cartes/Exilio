@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Agent extends Model
 {
@@ -14,5 +15,15 @@ class Agent extends Model
     protected function casts(): array
     {
         return ['attributes' => 'array'];
+    }
+
+    public function memories(): HasMany
+    {
+        return $this->hasMany(Memory::class);
+    }
+
+    public function tombstones(): HasMany
+    {
+        return $this->hasMany(MemoryTombstone::class);
     }
 }

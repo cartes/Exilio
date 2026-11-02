@@ -6,7 +6,8 @@ Este roadmap ordena el desarrollo por hitos verificables. La Fase 0 es el único
 
 Se mantienen los límites de `FOUNDATION.md`: no asumir conciencia, sentimientos o sufrimiento; mantener inicialmente vacía la memoria autobiográfica; distinguir hechos, hipótesis y sueños; conservar procedencia auditable; no realizar llamadas reales a modelos, incurrir en gastos ni desplegar durante Fase 0.
 
-## Fase 0 — Fundamentos (actual)
+
+## Fase 0 — Fundamentos (completada)
 
 **Objetivo:** consolidar arquitectura, identidad persistente de EXILIO-001, curiosidad y pruebas.
 
@@ -18,15 +19,24 @@ Se mantienen los límites de `FOUNDATION.md`: no asumir conciencia, sentimientos
 - Conservar la puntuación de curiosidad `C = 0.30N + 0.25I + 0.30A + 0.15R`, con señales normalizadas y pesos que sumen 1.
 - Asegurar que las pruebas cubran los contratos y límites implementados.
 
-**Criterio de salida:** los componentes base pueden ejecutarse localmente siguiendo instrucciones documentadas; la identidad fundadora se representa de forma estable; los contratos y la fórmula de curiosidad tienen cobertura reproducible; no hay conexiones a proveedores reales ni procesos autónomos.
+**Criterio de salida:** componentes base ejecutables localmente con pruebas passing en Python y Laravel/PHPUnit; identidad `EXILIO-001` persistente y verificada; sin conexiones a proveedores externos ni procesos autónomos.
 
-## Fase 1 — Persistencia explícita
+## Fase 1 — Persistencia explícita (actual)
 
 **Objetivo:** acordar e implementar un modelo de datos mínimo, auditable y corregible.
 
-**Decisiones previas:** esquema y retención por categoría de memoria; procedencia; mecanismos de corrección y eliminación; distinción entre hechos e hipótesis; límites de acceso.
+**Decisiones acordadas:**
 
-**Criterio de salida propuesto:** los registros persistidos tienen origen y tipo explícitos, pueden inspeccionarse y corregirse, y no se confunden con hechos verificados cuando son hipótesis. La memoria no se llena automáticamente.
+- Tabla unificada `memories` con FK a `agents` (cascada al eliminar agente).
+- Taxonomía explícita en cinco categorías (`episodic`, `semantic`, `social`, `procedural`, `oneiric`).
+- Distinción epistémica rigurosa: `oneiric` exige y solo admite `dream`; otras categorías solo admiten `fact` o `hypothesis`.
+- Separación de procedencia y evidencia: `origin` observable obligatorio para `fact` (rechaza inferencias internas como hechos); `evidence_ref` para soporte comprobable.
+- `confidence` acotado exclusivamente a `hypothesis` en $[0, 1]$; forzosamente `NULL` en hechos y sueños.
+- Ciclo de vida explícito sin mutación destructiva: inmutabilidad por defecto, rectificación por versionado referencial (`supersedes_id`, `superseded_at`), y eliminación con purga de contenido y registro en `memory_tombstones`.
+- Persistencia bajo demanda sin bucles autónomos de fondo.
+- Restricciones duales: `CHECK` constraints a nivel de base de datos y validación de API.
+
+**Criterio de salida propuesto:** los registros persistidos tienen origen y tipo explícitos, pueden inspeccionarse y rectificarse auditadamente, se purgan de forma efectiva al eliminarse, y las restricciones de base de datos y API impiden registrar hipótesis o sueños como hechos. La memoria no se llena automáticamente.
 
 ## Fase 2 — Interfaz de observación
 
