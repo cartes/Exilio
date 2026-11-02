@@ -286,6 +286,29 @@ class MemoryApiTest extends TestCase
         $this->assertSame('User requested right to be forgotten purge', $tombstone->reason);
     }
 
+    public function test_can_list_agent_tombstones(): void
+    {
+        $memory = $this->agent->memories()->create([
+            'type' => 'episodic',
+            'epistemic_status' => 'fact',
+            'origin' => 'user_input',
+            'content' => 'Temporary audit memory',
+        ]);
+
+        $this->deleteJson('/api/memories/' . $memory->id, [
+            'reason' => 'Testing audit list',
+        ]);
+
+        $response = $this->getJson('/api/agents/' . $this->agent->id . '/tombstones');
+
+        $response->assertStatus(200);
+        $response->assertJsonCount(1);
+        $response->assertJsonFragment([
+            'memory_id' => $memory->id,
+            'reason' => 'Testing audit list',
+        ]);
+    }
+
     public function test_database_check_constraints_prevent_direct_invalid_inserts(): void
     {
         $this->expectException(\Illuminate\Database\QueryException::class);
@@ -305,4 +328,3 @@ class MemoryApiTest extends TestCase
         ]);
     }
 }
-

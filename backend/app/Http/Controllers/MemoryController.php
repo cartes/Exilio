@@ -34,6 +34,13 @@ class MemoryController
         return response()->json($memories);
     }
 
+    public function tombstones(Agent $agent): JsonResponse
+    {
+        $tombstones = $agent->tombstones()->orderBy('created_at', 'desc')->get();
+
+        return response()->json($tombstones);
+    }
+
     public function show(Memory $memory): JsonResponse
     {
         return response()->json($memory);

@@ -4,7 +4,7 @@
 
 - `backend/`: API REST Laravel 13; posee la persistencia transaccional y expone agentes.
 - `cognitive-engine/`: biblioteca Python 3.12 independiente; concentra configuración cognitiva, curiosidad y contratos de proveedores.
-- `frontend/`: espacio reservado para Vue 3, Vite y Tailwind en una fase posterior.
+- `frontend/`: aplicación SPA en Vue 3, Vite y Tailwind CSS para la interfaz de observación y auditoría local (Fase 2).
 - `infrastructure/`: espacio para despliegue y configuración futura; Compose inicial vive en la raíz para facilitar el arranque.
 - `experiments/`: experimentos reproducibles aislados del runtime.
 - `docs/`: decisiones y principios vigentes.
@@ -22,6 +22,15 @@ El modelo de memoria se articula en una tabla unificada `memories` respaldada po
 - **Inmutabilidad y Rectificación:** No se realizan mutaciones destructivas in-place. La rectificación crea una nueva versión referenciando `supersedes_id` y marca la anterior con `superseded_at`.
 - **Eliminación:** La eliminación purga el registro de `memories` y crea un registro mínimo de auditoría en `memory_tombstones` sin retener texto sensible.
 - **Restricciones de integridad:** Reglas forzadas tanto a nivel de constraints de base de datos (`CHECK`) como en la capa de validación de la API. Persistencia exclusivamente bajo demanda sin bucles en segundo plano.
+
+## Interfaz de observación (Fase 2)
+
+La interfaz web en `frontend/` es una SPA basada en Vue 3, Vite y Tailwind CSS diseñada para el rol de auditor/observador local en desarrollo (`localhost`).
+- **Inspección de identidad y configuración:** Consulta y presenta la identidad de EXILIO-001, su versión de personalidad y los parámetros de curiosidad ($C = 0.30N + 0.25I + 0.30A + 0.15R$).
+- **Visualización y auditoría de memorias:** Presenta los registros persistidos con filtrado por categoría taxonómica y estado epistémico (`fact`, `hypothesis`, `dream`), haciendo explícita la procedencia (`origin`), evidencia (`evidence_ref`) y confianza (`confidence`).
+- **Trazabilidad y rectificación:** Muestra la cadena de versiones (`supersedes_id`, `superseded_at`) y el historial de registros purgados en `memory_tombstones`.
+- **Operaciones controladas:** Permite crear entradas con origen `manual_entry`, rectificar y eliminar registros exclusivamente bajo demanda del usuario en entorno local.
+- **Límites epistémicos y éticos:** No infiere ni renderiza estados antropomórficos o subjetivos (ánimo, emociones, dolor o conciencia); todo estado se presenta como dato computacional observable. Sin llamadas externas, analíticas ni dependencias de red ajenas a localhost.
 
 ## Motor cognitivo y proveedores
 
