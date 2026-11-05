@@ -1,7 +1,21 @@
 @import "tailwindcss";
 
-dialog::backdrop {
-  background-color: rgba(2, 6, 23, 0.75);
-  backdrop-filter: blur(4px);
+/* Centrado exacto horizontal y vertical para elementos <dialog> */
+dialog {
+  position: fixed !important;
+  inset: 0 !important;
+  margin: auto !important;
+  max-height: calc(100dvh - 3rem);
+  max-width: calc(100vw - 2rem);
+  box-sizing: border-box;
 }
 
+dialog[open] {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+dialog::backdrop {
+  background-color: rgba(2, 6, 23, 0.85);
+  backdrop-filter: blur(8px);
+}

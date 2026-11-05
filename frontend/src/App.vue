@@ -504,6 +504,22 @@ onMounted(async () => {
                 <span class="font-mono text-slate-400">{{ agent?.created_at ? new Date(agent.created_at).toLocaleString() : '—' }}</span>
               </div>
             </div>
+
+            <!-- Función & Ejemplo: Identidad -->
+            <div class="mt-4 p-3 rounded-lg bg-slate-950/80 border border-slate-800 space-y-2 text-xs">
+              <div>
+                <span class="text-[10px] uppercase font-mono font-bold text-cyan-400 block">¿Qué hace esta función?</span>
+                <p class="text-slate-300 text-[11px] leading-relaxed">
+                  Mantiene la identidad persistente de EXILIO-001 entre sesiones. Garantiza que la personalidad y la memoria autobiográfica comiencen estrictamente vacías, evolucionando únicamente a partir de experiencias registradas.
+                </p>
+              </div>
+              <div class="pt-2 border-t border-slate-800/80">
+                <span class="text-[10px] uppercase font-mono font-bold text-slate-400 block">Ejemplo observable:</span>
+                <p class="text-[11px] text-slate-300 font-mono bg-slate-900/90 p-1.5 rounded mt-1 border border-slate-800">
+                  EXILIO-001 | v{{ agent?.personality_version || 1 }}.0 | personality: {{ Object.keys(agent?.attributes?.personality || {}).length === 0 ? '{}' : '{...}' }} | autobiographical_memory: []
+                </p>
+              </div>
+            </div>
           </div>
 
           <div class="mt-6 pt-4 border-t border-slate-800 text-[11px] text-slate-500 italic">
@@ -522,7 +538,7 @@ onMounted(async () => {
               Función de Curiosidad
               <code class="text-xs font-mono bg-slate-800 text-cyan-300 px-2 py-0.5 rounded">C = 0.30N + 0.25I + 0.30A + 0.15R</code>
             </h3>
-            <p class="text-xs text-slate-400 mb-6">
+            <p class="text-xs text-slate-400 mb-4">
               Mecanismo puro de motivación inicial. La relevancia adquirida se fundamenta exclusivamente en evidencias registradas sin precargas intrínsecas.
             </p>
 
@@ -546,6 +562,27 @@ onMounted(async () => {
                 <div class="text-[11px] font-mono text-slate-400 mb-1">R (Relevancia)</div>
                 <div class="text-xl font-bold font-mono text-indigo-400">0.15</div>
                 <div class="text-[10px] text-slate-500 mt-1">Peso asignado: 15%</div>
+              </div>
+            </div>
+
+            <!-- Función & Ejemplo: Curiosidad -->
+            <div class="p-3 rounded-lg bg-slate-950/80 border border-slate-800 space-y-2 text-xs">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <span class="text-[10px] uppercase font-mono font-bold text-cyan-400 block">¿Qué hace esta función?</span>
+                  <p class="text-slate-300 text-[11px] leading-relaxed">
+                    Evalúa el impulso exploratorio del agente combinando 4 señales en [0, 1]. Prioriza qué indagar sin sesgos arbitrarios: mayor novedad, incertidumbre epistemológica o relevancia registrada producen mayor curiosidad (C).
+                  </p>
+                </div>
+                <div>
+                  <span class="text-[10px] uppercase font-mono font-bold text-slate-400 block">Ejemplo de cálculo observable:</span>
+                  <p class="text-slate-300 text-[11px]">
+                    Tema con <code class="text-cyan-300 font-mono">N=0.85, I=0.80, A=0.75, R=0.15</code>:
+                  </p>
+                  <p class="text-slate-400 text-[10px] font-mono mt-0.5">
+                    C = (0.30×0.85) + (0.25×0.80) + (0.30×0.75) + (0.15×0.15) = <strong class="text-emerald-400">0.7025</strong> (alta prioridad de investigación).
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -588,6 +625,45 @@ onMounted(async () => {
             >
               <span>⚡</span> Ejecutar Aprendizaje Controlado
             </button>
+          </div>
+        </div>
+
+        <!-- Función & Ejemplos: Aprendizaje Controlado (Fase 3) -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 text-xs space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <span class="text-xs font-mono font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-2">
+              <span>⚡</span> ¿Qué hace el Aprendizaje Controlado?
+            </span>
+            <span class="text-[11px] font-mono text-slate-400">Sin mutación in-place | Reversión auditable</span>
+          </div>
+          <p class="text-slate-300 leading-relaxed text-xs">
+            Evalúa evidencias de memorias vigentes (<code class="text-cyan-300 font-mono">superseded_at IS NULL</code>) bajo demanda para actualizar rasgos e intereses. Incrementa la versión (<code class="text-cyan-300 font-mono">v{{ agent?.personality_version || 1 }}.0 &rarr; v{{ (agent?.personality_version || 1) + 1 }}.0</code>) y persiste un snapshot inmutable en <code class="text-slate-300 font-mono">agent_learning_versions</code>. Aplica una estricta diferenciación epistémica en 3 niveles:
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t border-slate-800/80 text-[11px]">
+            <div class="p-2.5 rounded-lg bg-slate-950 border border-emerald-900/50 space-y-1">
+              <span class="font-mono font-bold text-emerald-400 block">1. Hechos (fact) &rarr; Consolidación</span>
+              <p class="text-slate-400">Consolida rasgos de personalidad y relevancia adquirida <code class="text-emerald-300">R &le; 1.0</code>.</p>
+              <div class="text-[10px] font-mono text-slate-500 pt-1 border-t border-slate-900">
+                <strong class="text-slate-400">Ejemplo:</strong> Hecho de sesión analítica consolida rasgo <code class="text-emerald-300">analytical_rigor = 0.80</code> e interés <code class="text-emerald-300">teoría de grafos (R=0.25)</code>.
+              </div>
+            </div>
+
+            <div class="p-2.5 rounded-lg bg-slate-950 border border-amber-900/50 space-y-1">
+              <span class="font-mono font-bold text-amber-400 block">2. Hipótesis (hypothesis) &rarr; Tentativo</span>
+              <p class="text-slate-400">Ajusta rasgos ponderados por certeza. Relevancia acotada a <code class="text-amber-300">R &le; 0.60</code>.</p>
+              <div class="text-[10px] font-mono text-slate-500 pt-1 border-t border-slate-900">
+                <strong class="text-slate-400">Ejemplo:</strong> Inferencia con confianza 50% ajusta tentativamente <code class="text-amber-300">conciseness = 0.40</code> e interés <code class="text-amber-300">síntesis (R=0.10)</code>.
+              </div>
+            </div>
+
+            <div class="p-2.5 rounded-lg bg-slate-950 border border-purple-900/50 space-y-1">
+              <span class="font-mono font-bold text-purple-400 block">3. Sueños (dream) &rarr; Curiosidad</span>
+              <p class="text-slate-400">No altera rasgos reales; siembra intereses con pregunta guiada y <code class="text-purple-300">R &le; 0.25</code>.</p>
+              <div class="text-[10px] font-mono text-slate-500 pt-1 border-t border-slate-900">
+                <strong class="text-slate-400">Ejemplo:</strong> Sueño de perro en playa siembra interés <code class="text-purple-300">playas para perros (R=0.15)</code> e indaga <code class="text-purple-300">"Averiguar cuál es la mejor playa..."</code>.
+              </div>
+            </div>
           </div>
         </div>
 
@@ -813,6 +889,45 @@ onMounted(async () => {
           </div>
         </div>
 
+        <!-- Función & Ejemplos: Modelo de Memorias (Fase 1 & 2) -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 text-xs space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <span class="text-xs font-mono font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-2">
+              <span>📦</span> ¿Qué hace el Sistema de Memoria Persistida?
+            </span>
+            <span class="text-[11px] font-mono text-slate-400">Taxonomía de 5 categorías | Separación de Certeza Epistémica</span>
+          </div>
+          <p class="text-slate-300 leading-relaxed text-xs">
+            Almacena experiencias estructuradas sin mutación in-place. La corrección crea nuevas versiones referenciando <code class="text-cyan-300 font-mono">supersedes_id</code> (marcando la previa con <code class="text-slate-400 font-mono">superseded_at</code>), y la eliminación borra físicamente el texto sensible dejando un registro auditable en <code class="text-rose-400 font-mono">memory_tombstones</code>.
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t border-slate-800/80 text-[11px]">
+            <div class="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80 space-y-1">
+              <span class="font-mono font-bold text-slate-200 block">5 Tipos Conceptuales:</span>
+              <p class="text-slate-400">Episódica (hechos situados), Semántica (conceptos), Social (relaciones), Procedimental (métodos) y Onírica (simulaciones internas).</p>
+              <div class="text-[10px] font-mono text-slate-500 pt-1 border-t border-slate-900">
+                <strong class="text-slate-400">Ejemplo:</strong> Episódica + Hecho = <code class="text-cyan-300">"El usuario saludó e inició sesión"</code> (origen: user_input).
+              </div>
+            </div>
+
+            <div class="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80 space-y-1">
+              <span class="font-mono font-bold text-slate-200 block">3 Estados de Certeza:</span>
+              <p class="text-slate-400">Hecho (<code class="text-emerald-400">fact</code>, observable, sin confianza), Hipótesis (<code class="text-amber-400">hypothesis</code>, confianza obligatoria) y Sueño (<code class="text-purple-400">dream</code>, sin certeza de hecho).</p>
+              <div class="text-[10px] font-mono text-slate-500 pt-1 border-t border-slate-900">
+                <strong class="text-slate-400">Ejemplo:</strong> Hipótesis = <code class="text-amber-300">"Preferencia por respuestas concisas"</code> (certeza: 75%).
+              </div>
+            </div>
+
+            <div class="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80 space-y-1">
+              <span class="font-mono font-bold text-slate-200 block">Rectificación & Purgas:</span>
+              <p class="text-slate-400">Rectificar crea una versión corregida sin sobrescribir. Purgar elimina el texto definitivamente dejando constancia en tombstones.</p>
+              <div class="text-[10px] font-mono text-slate-500 pt-1 border-t border-slate-900">
+                <strong class="text-slate-400">Ejemplo:</strong> Purgar memoria genera tombstone con motivo <code class="text-rose-300">"Solicitud de olvido"</code>.
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Filter Controls -->
         <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-4">
           <div class="flex flex-wrap gap-6 items-center">
@@ -995,17 +1110,24 @@ onMounted(async () => {
       closedby="any"
       aria-labelledby="createModalTitle"
       @click="handleDialogClickFallback($event, createModal)"
-      class="rounded-2xl bg-slate-900 border border-slate-700 text-slate-100 p-6 max-w-xl w-full shadow-2xl backdrop:bg-slate-950/80"
+      class="fixed inset-0 m-auto max-h-[90vh] overflow-y-auto rounded-2xl bg-slate-900 border border-slate-700 text-slate-100 p-6 max-w-xl w-[calc(100%-2rem)] shadow-2xl backdrop:bg-slate-950/80 outline-none"
     >
-      <form @submit.prevent="submitCreate" class="space-y-5">
+      <form @submit.prevent="submitCreate" class="space-y-4">
         <div class="flex items-center justify-between border-b border-slate-800 pb-3">
           <h3 id="createModalTitle" class="text-base font-bold text-white font-mono">Registrar Entrada Manual de Memoria</h3>
           <button type="button" @click="createModal?.close()" class="text-slate-400 hover:text-white text-lg">✕</button>
         </div>
 
-        <p class="text-xs text-slate-400">
-          Operación de desarrollo local. Las reglas epistémicas se validan estrictamente antes de persistir en PostgreSQL.
-        </p>
+        <!-- Función & Ejemplo: Registrar Memoria -->
+        <div class="p-3 rounded-lg bg-slate-950/90 border border-slate-800 text-xs space-y-1.5">
+          <span class="text-[10px] font-mono font-bold text-cyan-400 uppercase block">¿Qué hace esta función?</span>
+          <p class="text-slate-300 text-[11px] leading-relaxed">
+            Permite ingresar una experiencia o inferencia al sistema validando sus restricciones ontológicas. Los hechos (<code class="text-emerald-400">fact</code>) exigen origen observable sin confianza; las hipótesis (<code class="text-amber-400">hypothesis</code>) exigen nivel de confianza; y los sueños (<code class="text-purple-400">dream</code>) solo son válidos bajo categoría onírica.
+          </p>
+          <div class="text-[10px] font-mono text-slate-400 pt-1 border-t border-slate-800">
+            <strong>Ejemplo:</strong> Hecho episódico: <code class="text-cyan-300">"El usuario solicitó auditar la memoria"</code> con evidencia <code class="text-cyan-300">obs-cli-01</code>.
+          </div>
+        </div>
 
         <!-- Taxonomy category selection -->
         <fieldset class="space-y-1.5">
@@ -1123,19 +1245,30 @@ onMounted(async () => {
       closedby="any"
       aria-labelledby="rectifyModalTitle"
       @click="handleDialogClickFallback($event, rectifyModal)"
-      class="rounded-2xl bg-slate-900 border border-slate-700 text-slate-100 p-6 max-w-xl w-full shadow-2xl backdrop:bg-slate-950/80"
+      class="fixed inset-0 m-auto max-h-[90vh] overflow-y-auto rounded-2xl bg-slate-900 border border-slate-700 text-slate-100 p-6 max-w-xl w-[calc(100%-2rem)] shadow-2xl backdrop:bg-slate-950/80 outline-none"
     >
-      <form @submit.prevent="submitRectify" class="space-y-5">
+      <form @submit.prevent="submitRectify" class="space-y-4">
         <div class="flex items-center justify-between border-b border-slate-800 pb-3">
           <h3 id="rectifyModalTitle" class="text-base font-bold text-white font-mono">Rectificar Memoria</h3>
           <button type="button" @click="rectifyModal?.close()" class="text-slate-400 hover:text-white text-lg">✕</button>
+        </div>
+
+        <!-- Función & Ejemplo: Rectificar Memoria -->
+        <div class="p-3 rounded-lg bg-slate-950/90 border border-slate-800 text-xs space-y-1.5">
+          <span class="text-[10px] font-mono font-bold text-cyan-400 uppercase block">¿Qué hace esta función?</span>
+          <p class="text-slate-300 text-[11px] leading-relaxed">
+            Corrige una memoria de forma inmutable sin sobrescribirla en su lugar. La versión actual queda archivada con <code class="text-amber-400 font-mono">superseded_at</code> y se crea un nuevo registro con <code class="text-cyan-400 font-mono">supersedes_id</code> apuntando al original.
+          </p>
+          <div class="text-[10px] font-mono text-slate-400 pt-1 border-t border-slate-800">
+            <strong>Ejemplo:</strong> Hipótesis preliminar al 40% &rarr; rectificada con nueva evidencia documental al 85%.
+          </div>
         </div>
 
         <div class="p-3 rounded-lg bg-slate-950 border border-slate-800 text-xs space-y-1">
           <span class="text-slate-500 font-mono">Registro original a rectificar:</span>
           <p class="text-slate-300 italic truncate">{{ rectifyTarget?.content }}</p>
           <span class="text-[10px] text-cyan-400 font-mono">
-            La versión actual quedará marcada como superseded_at y se creará una nueva entrada referenciando supersedes_id.
+            ID: {{ rectifyTarget?.id }}
           </span>
         </div>
 
@@ -1255,7 +1388,7 @@ onMounted(async () => {
       closedby="any"
       aria-labelledby="deleteModalTitle"
       @click="handleDialogClickFallback($event, deleteModal)"
-      class="rounded-2xl bg-slate-900 border border-rose-800 text-slate-100 p-6 max-w-md w-full shadow-2xl backdrop:bg-slate-950/80"
+      class="fixed inset-0 m-auto max-h-[90vh] overflow-y-auto rounded-2xl bg-slate-900 border border-rose-800 text-slate-100 p-6 max-w-md w-[calc(100%-2rem)] shadow-2xl backdrop:bg-slate-950/80 outline-none"
     >
       <form @submit.prevent="submitDelete" class="space-y-4">
         <div class="flex items-center justify-between border-b border-slate-800 pb-3">
@@ -1263,9 +1396,16 @@ onMounted(async () => {
           <button type="button" @click="deleteModal?.close()" class="text-slate-400 hover:text-white text-lg">✕</button>
         </div>
 
-        <p class="text-xs text-slate-300 leading-relaxed">
-          Esta acción eliminará físicamente el contenido de la memoria de la tabla <code class="text-rose-300 font-mono">memories</code>. No se conservará texto sensible. Se registrará un tombstone mínimo con el motivo de auditoría.
-        </p>
+        <!-- Función & Ejemplo: Purgar Memoria -->
+        <div class="p-3 rounded-lg bg-slate-950/90 border border-rose-900/60 text-xs space-y-1.5">
+          <span class="text-[10px] font-mono font-bold text-rose-400 uppercase block">¿Qué hace esta función?</span>
+          <p class="text-slate-300 text-[11px] leading-relaxed">
+            Elimina físicamente el texto sensible de la memoria en PostgreSQL y crea un registro mínimo inmutable en <code class="text-rose-300 font-mono">memory_tombstones</code> con el motivo de auditoría.
+          </p>
+          <div class="text-[10px] font-mono text-slate-400 pt-1 border-t border-slate-800">
+            <strong>Ejemplo de motivo:</strong> <code class="text-rose-300">"Solicitud de olvido del operador / datos sensibles"</code>.
+          </div>
+        </div>
 
         <div class="space-y-1">
           <label for="delete_reason" class="text-xs font-mono text-slate-400">Motivo de la purga:</label>
@@ -1303,7 +1443,7 @@ onMounted(async () => {
       closedby="any"
       aria-labelledby="tombstonesModalTitle"
       @click="handleDialogClickFallback($event, tombstonesModal)"
-      class="rounded-2xl bg-slate-900 border border-slate-700 text-slate-100 p-6 max-w-2xl w-full shadow-2xl backdrop:bg-slate-950/80"
+      class="fixed inset-0 m-auto max-h-[90vh] overflow-y-auto rounded-2xl bg-slate-900 border border-slate-700 text-slate-100 p-6 max-w-2xl w-[calc(100%-2rem)] shadow-2xl backdrop:bg-slate-950/80 outline-none"
     >
       <div class="space-y-4">
         <div class="flex items-center justify-between border-b border-slate-800 pb-3">
@@ -1311,9 +1451,16 @@ onMounted(async () => {
           <button type="button" @click="tombstonesModal?.close()" class="text-slate-400 hover:text-white text-lg">✕</button>
         </div>
 
-        <p class="text-xs text-slate-400">
-          Auditoría de registros eliminados. Los tombstones garantizan trazabilidad sin almacenar texto o datos sensibles originales.
-        </p>
+        <!-- Función & Ejemplo: Tombstones -->
+        <div class="p-3 rounded-lg bg-slate-950/90 border border-slate-800 text-xs space-y-1.5">
+          <span class="text-[10px] font-mono font-bold text-cyan-400 uppercase block">¿Qué hace esta función?</span>
+          <p class="text-slate-300 text-[11px] leading-relaxed">
+            Permite a los auditores comprobar qué registros fueron eliminados permanentemente sin conservar datos sensibles personales. Garantiza trazabilidad y derecho al olvido.
+          </p>
+          <div class="text-[10px] font-mono text-slate-400 pt-1 border-t border-slate-800">
+            <strong>Ejemplo:</strong> <code class="text-slate-300">Memory ID: a4b1... | Motivo: Purga manual por auditoría | Fecha: 2026-11-05</code>.
+          </div>
+        </div>
 
         <div v-if="tombstones.length === 0" class="py-8 text-center text-slate-500 font-mono text-xs border border-dashed border-slate-800 rounded-lg">
           No hay registros de purgas registrados.
@@ -1351,17 +1498,24 @@ onMounted(async () => {
       closedby="any"
       aria-labelledby="learnModalTitle"
       @click="handleDialogClickFallback($event, learnModal)"
-      class="rounded-2xl bg-slate-900 border border-indigo-700/80 text-slate-100 p-6 max-w-2xl w-full shadow-2xl backdrop:bg-slate-950/80"
+      class="fixed inset-0 m-auto max-h-[90vh] overflow-y-auto rounded-2xl bg-slate-900 border border-indigo-700/80 text-slate-100 p-6 max-w-2xl w-[calc(100%-2rem)] shadow-2xl backdrop:bg-slate-950/80 outline-none"
     >
-      <form @submit.prevent="submitLearn" class="space-y-5">
+      <form @submit.prevent="submitLearn" class="space-y-4">
         <div class="flex items-center justify-between border-b border-slate-800 pb-3">
           <h3 id="learnModalTitle" class="text-base font-bold text-white font-mono">Ejecutar Operación de Aprendizaje Controlado</h3>
           <button type="button" @click="learnModal?.close()" class="text-slate-400 hover:text-white text-lg">✕</button>
         </div>
 
-        <p class="text-xs text-slate-400">
-          Selecciona una o más memorias vigentes como evidencia. Los sueños (<code class="text-purple-300">dream</code>) pueden guiar intereses y preguntas exploratorias (<code class="text-purple-300">R &le; 0.25</code>), pero nunca consolidan rasgos de personalidad como realidad vivida.
-        </p>
+        <!-- Función & Ejemplo: Aprendizaje Controlado -->
+        <div class="p-3 rounded-lg bg-slate-950/90 border border-indigo-900/60 text-xs space-y-1.5">
+          <span class="text-[10px] font-mono font-bold text-indigo-400 uppercase block">¿Qué hace esta función?</span>
+          <p class="text-slate-300 text-[11px] leading-relaxed">
+            Aplica una evolución explícita e incremental (<code class="text-cyan-300">v{{ (agent?.personality_version || 1) + 1 }}.0</code>) respaldada por memorias vigentes. Respeta los límites epistémicos: hechos consolidan, hipótesis son tentativas y sueños guían preguntas exploratorias con <code class="text-purple-300">R &le; 0.25</code> sin modificar rasgos de personalidad.
+          </p>
+          <div class="text-[10px] font-mono text-slate-400 pt-1 border-t border-slate-800">
+            <strong>Ejemplo:</strong> Seleccionar memoria de sueño &rarr; sembrar tema <code class="text-purple-300">"playas aptas para perros"</code> con pregunta <code class="text-purple-300">"Averiguar cuál es la mejor playa para llevar un perro"</code>.
+          </div>
+        </div>
 
         <!-- Selección de memorias vigentes -->
         <div class="space-y-2">
@@ -1510,7 +1664,7 @@ onMounted(async () => {
       closedby="any"
       aria-labelledby="versionsModalTitle"
       @click="handleDialogClickFallback($event, versionsModal)"
-      class="rounded-2xl bg-slate-900 border border-slate-700 text-slate-100 p-6 max-w-2xl w-full shadow-2xl backdrop:bg-slate-950/80"
+      class="fixed inset-0 m-auto max-h-[90vh] overflow-y-auto rounded-2xl bg-slate-900 border border-slate-700 text-slate-100 p-6 max-w-2xl w-[calc(100%-2rem)] shadow-2xl backdrop:bg-slate-950/80 outline-none"
     >
       <div class="space-y-4">
         <div class="flex items-center justify-between border-b border-slate-800 pb-3">
@@ -1518,9 +1672,16 @@ onMounted(async () => {
           <button type="button" @click="versionsModal?.close()" class="text-slate-400 hover:text-white text-lg">✕</button>
         </div>
 
-        <p class="text-xs text-slate-400">
-          Cada cambio genera un snapshot inmutable. Revertir a una versión anterior crea una nueva versión con <code class="text-cyan-300">operation_type = revert</code> sin borrar el historial.
-        </p>
+        <!-- Función & Ejemplo: Historial & Reversión -->
+        <div class="p-3 rounded-lg bg-slate-950/90 border border-slate-800 text-xs space-y-1.5">
+          <span class="text-[10px] font-mono font-bold text-cyan-400 uppercase block">¿Qué hace esta función?</span>
+          <p class="text-slate-300 text-[11px] leading-relaxed">
+            Conserva snapshots inmutables de cada estado alcanzado por el agente. Permite regresar a cualquier versión anterior creando un nuevo evento de reversión (<code class="text-cyan-300">operation_type = revert</code>) sin borrar el rastro histórico.
+          </p>
+          <div class="text-[10px] font-mono text-slate-400 pt-1 border-t border-slate-800">
+            <strong>Ejemplo:</strong> Revertir desde <code class="text-amber-300">v2.0</code> a <code class="text-cyan-300">v1.0</code> crea <code class="text-emerald-300">v3.0</code> con los atributos vacíos de v1 y registro auditable del motivo.
+          </div>
+        </div>
 
         <div class="space-y-1">
           <label for="revert_reason_input" class="text-xs font-mono text-slate-400">Motivo en caso de reversión:</label>
