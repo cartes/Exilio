@@ -38,7 +38,7 @@ Se mantienen los límites de `FOUNDATION.md`: no asumir conciencia, sentimientos
 
 **Criterio de salida:** los registros persistidos tienen origen y tipo explícitos, pueden inspeccionarse y rectificarse auditadamente, se purgan de forma efectiva al eliminarse, y las restricciones de base de datos y API impiden registrar hipótesis o sueños como hechos. La memoria no se llena automáticamente.
 
-## Fase 2 — Interfaz de observación (actual)
+## Fase 2 — Interfaz de observación (completada)
 
 **Objetivo:** ofrecer una interfaz para inspeccionar identidad, configuración y registros persistidos.
 
@@ -51,15 +51,24 @@ Se mantienen los límites de `FOUNDATION.md`: no asumir conciencia, sentimientos
 - **Acciones permitidas:** Inspección y filtrado de datos; operaciones de escritura disponibles solo en desarrollo local (creación manual con `manual_entry`, rectificación de registros y eliminación con purga hacia tombstones).
 - **Stack:** Vue 3 + Vite + Tailwind CSS en `frontend/`, comunicándose con la API local de Laravel (`backend/`).
 
-**Criterio de salida propuesto:** la interfaz web se ejecuta en localhost, muestra el estado respaldado por la API de Laravel, permite auditar procedencia y rectificaciones sin inferir estados subjetivos, y permite ejecutar las operaciones de auditoría autorizadas.
+**Criterio de salida:** la interfaz web se ejecuta en localhost, muestra el estado respaldado por la API de Laravel, permite auditar procedencia y rectificaciones sin inferir estados subjetivos, y permite ejecutar las operaciones de auditoría autorizadas.
 
-## Fase 3 — Aprendizaje controlado
+## Fase 3 — Aprendizaje controlado (completada)
 
 **Objetivo:** evaluar cambios derivados de experiencias registradas mediante operaciones explícitas y revisables.
 
-**Decisiones previas:** definición de aprendizaje, evaluación, versionado de personalidad e intereses, reversión y salvaguardas. Cualquier relevancia adquirida debe apoyarse en evidencia registrada.
+**Decisiones acordadas:**
 
-**Criterio de salida propuesto:** cada cambio puede rastrearse hasta su evidencia, compararse con criterios documentados y revertirse.
+- **Dimensiones que evolucionan:** Tanto rasgos/atributos de personalidad (`personality`) como temas de interés (`interests`) con su relevancia adquirida ($R \in [0, 1]$) y puntuación de curiosidad ($C = 0.30N + 0.25I + 0.30A + 0.15R$). El estado inicial de `EXILIO-001` permanece vacío hasta registrar operaciones con evidencia.
+- **Activación y aplicación:** Operación explícita bajo demanda (`POST /api/agents/{agent}/learn`) que aplica directamente una nueva versión (`personality_version`) respaldada por memorias vigentes (`superseded_at IS NULL`), almacenando un snapshot inmutable en `agent_learning_versions`.
+- **Diferenciación epistémica en tres niveles (`fact` / `hypothesis` / `dream`):**
+  - **Hechos (`fact`):** Consolidan rasgos de personalidad y permiten relevancia adquirida $R$ hasta `1.0`.
+  - **Hipótesis (`hypothesis`):** Generan ajustes tentativos ponderados por `confidence`, con tope de relevancia adquirida $R \le 0.60$.
+  - **Sueños (`dream` / `oneiric`):** Nunca consolidan hechos ni rasgos de personalidad como realidad vivida, pero **guían la curiosidad del sistema** generando intereses/preguntas exploratorias (`exploratory_query`) y un impulso exploratorio inicial acotado ($R \le 0.25$), siempre identificado explícitamente como de origen onírico (`dream`).
+- **Reversión (Rollback):** Operación explícita (`POST /api/agents/{agent}/versions/{version}/revert`) que restaura el estado de cualquier versión previa creando un nuevo registro de versión auditable (`operation_type = revert`) sin borrar el historial.
+- **Lógica cognitiva:** Reglas deterministas puras en `cognitive-engine/personality/` (con soporte para `MockProvider` y sin llamadas externas) replicadas en el validador/evaluador transaccional del backend y auditables desde el frontend local.
+
+**Criterio de salida:** cada cambio en personalidad, intereses o relevancia adquirida ($R$) puede rastrearse hasta sus memorias de evidencia, respeta los límites epistémicos de hechos, hipótesis y sueños, incrementa la versión del agente y puede revertirse auditadamente.
 
 ## Fase 4 — Evaluación de integraciones externas
 

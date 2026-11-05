@@ -1,11 +1,16 @@
 <?php
 
 use App\Http\Controllers\AgentController;
+use App\Http\Controllers\AgentLearningController;
 use App\Http\Controllers\MemoryController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/agents', [AgentController::class, 'index']);
 Route::get('/agents/{agent}', [AgentController::class, 'show']);
+
+Route::get('/agents/{agent}/versions', [AgentLearningController::class, 'index']);
+Route::post('/agents/{agent}/learn', [AgentLearningController::class, 'learn']);
+Route::post('/agents/{agent}/versions/{version}/revert', [AgentLearningController::class, 'revert']);
 
 Route::get('/agents/{agent}/memories', [MemoryController::class, 'index']);
 Route::post('/agents/{agent}/memories', [MemoryController::class, 'store']);

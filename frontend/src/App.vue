@@ -4,6 +4,7 @@ import { ref, computed, onMounted, useTemplateRef } from 'vue'
 const agent = ref(null)
 const memories = ref([])
 const tombstones = ref([])
+const versions = ref([])
 const loading = ref(true)
 const error = ref(null)
 const successMessage = ref(null)
@@ -18,8 +19,55 @@ const createModal = useTemplateRef('createModal')
 const rectifyModal = useTemplateRef('rectifyModal')
 const deleteModal = useTemplateRef('deleteModal')
 const tombstonesModal = useTemplateRef('tombstonesModal')
+const learnModal = useTemplateRef('learnModal')
+const versionsModal = useTemplateRef('versionsModal')
 
 // Form states
+const learnForm = ref({
+  evidence_memory_ids: [],
+  summary: 'Operación explícita de aprendizaje controlado',
+  trait_key: '',
+  trait_value: 0.5,
+  interest_topic: '',
+  exploratory_query: '',
+})
+
+const revertReason = ref('Reversión explícita por auditoría')
+
+const personalityList = computed(() => {
+  return Object.values(agent.value?.attributes?.personality || {})
+})
+
+const interestsList = computed(() => {
+  return Object.values(agent.value?.attributes?.interests || {})
+})
+
+const activeMemories = computed(() => {
+  return memories.value.filter(m => !m.superseded_at)
+})
+
+const selectedEvidenceMemories = computed(() => {
+  const ids = new Set(learnForm.value.evidence_memory_ids)
+  return activeMemories.value.filter(m => ids.has(m.id))
+})
+
+const isOnlyDreamEvidenceSelected = computed(() => {
+  if (selectedEvidenceMemories.value.length === 0) return false
+  return selectedEvidenceMemories.value.every(m => m.epistemic_status === 'dream')
+})
+
+function getEvidenceStatus(memId) {
+  const audit = agent.value?.evidence_audit
+  if (audit) {
+    if ((audit.purged_memory_ids || []).includes(memId)) return 'purged'
+    if ((audit.superseded_memory_ids || []).includes(memId)) return 'superseded'
+  }
+  return 'active'
+}
+
+function hasStaleEvidenceInList(memoryIds) {
+  return (memoryIds || []).some(id => getEvidenceStatus(id) !== 'active')
+}
 const newMemoryForm = ref({
   type: 'episodic',
   epistemic_status: 'fact',
@@ -98,6 +146,105 @@ async function fetchTombstones() {
     const res = await fetch(`/api/agents/${agent.value.id}/tombstones`)
     if (!res.ok) throw new Error(`Error ${res.status}: Fallo al consultar tombstones`)
     tombstones.value = await res.json()
+  } catch (err) {
+    error.value = err.message
+  }
+}
+
+async function fetchVersions() {
+  if (!agent.value) return
+  try {
+    const res = await fetch(`/api/agents/${agent.value.id}/versions`)
+    if (!res.ok) throw new Error(`Error ${res.status}: Fallo al consultar historial de versiones`)
+    versions.value = await res.json()
+  } catch (err) {
+    error.value = err.message
+  }
+}
+
+function openLearnModal() {
+  learnForm.value = {
+    evidence_memory_ids: [],
+    summary: 'Operación explícita de aprendizaje controlado',
+    trait_key: '',
+    trait_value: 0.5,
+    interest_topic: '',
+    exploratory_query: '',
+  }
+  learnModal.value?.showModal()
+}
+
+function openVersionsModal() {
+  fetchVersions()
+  versionsModal.value?.showModal()
+}
+
+async function submitLearn() {
+  if (!agent.value) return
+  error.value = null
+
+  const payload = {
+    evidence_memory_ids: learnForm.value.evidence_memory_ids,
+    summary: learnForm.value.summary || 'Operación explícita de aprendizaje controlado',
+  }
+
+  if (!isOnlyDreamEvidenceSelected.value && learnForm.value.trait_key.trim() !== '') {
+    payload.trait_updates = {
+      [learnForm.value.trait_key.trim()]: parseFloat(learnForm.value.trait_value),
+    }
+  }
+
+  if (learnForm.value.interest_topic.trim() !== '') {
+    payload.interest_topics = [
+      {
+        topic: learnForm.value.interest_topic.trim(),
+        exploratory_query: learnForm.value.exploratory_query.trim() || null,
+      },
+    ]
+  }
+
+  try {
+    const res = await fetch(`/api/agents/${agent.value.id}/learn`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+
+    if (!res.ok) {
+      const data = await res.json()
+      throw new Error(data.message || JSON.stringify(data.errors) || 'Error al ejecutar aprendizaje')
+    }
+
+    const data = await res.json()
+    agent.value = data.agent
+    learnModal.value?.close()
+    flashSuccess(`Aprendizaje registrado en v${data.agent.personality_version}.0 con evidencia trazable.`)
+    await fetchVersions()
+  } catch (err) {
+    error.value = err.message
+  }
+}
+
+async function submitRevert(targetVersion) {
+  if (!agent.value) return
+  error.value = null
+
+  try {
+    const res = await fetch(`/api/agents/${agent.value.id}/versions/${targetVersion}/revert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ reason: revertReason.value || 'Reversión explícita por auditoría' }),
+    })
+
+    if (!res.ok) {
+      const data = await res.json()
+      throw new Error(data.message || JSON.stringify(data.errors) || 'Error al revertir versión')
+    }
+
+    const data = await res.json()
+    agent.value = data.agent
+    flashSuccess(`Estado restaurado desde v${targetVersion}.0 (nueva versión auditable: v${data.agent.personality_version}.0).`)
+    await fetchVersions()
   } catch (err) {
     error.value = err.message
   }
@@ -244,7 +391,7 @@ async function submitRectify() {
 
     rectifyModal.value?.close()
     flashSuccess('Memoria rectificada exitosamente sin mutación in-place.')
-    await fetchMemories()
+    await Promise.all([fetchMemories(), fetchAgent()])
   } catch (err) {
     error.value = err.message
   }
@@ -268,7 +415,7 @@ async function submitDelete() {
 
     deleteModal.value?.close()
     flashSuccess('Memoria purgada permanentemente y registrada en tombstones.')
-    await fetchMemories()
+    await Promise.all([fetchMemories(), fetchAgent()])
   } catch (err) {
     error.value = err.message
   }
@@ -277,7 +424,7 @@ async function submitDelete() {
 onMounted(async () => {
   const currentAgent = await fetchAgent()
   if (currentAgent) {
-    await fetchMemories()
+    await Promise.all([fetchMemories(), fetchVersions()])
   }
 })
 </script>
@@ -292,9 +439,9 @@ onMounted(async () => {
           <div>
             <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
               PROYECTO EXILIO
-              <span class="text-xs font-mono font-normal px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">Fase 2: Observación & Auditoría</span>
+              <span class="text-xs font-mono font-normal px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">Fase 3: Aprendizaje Controlado & Auditoría</span>
             </h1>
-            <p class="text-xs text-slate-400">Inspección ontológica y procedencia auditable sin inferencia de estados subjetivos</p>
+            <p class="text-xs text-slate-400">Inspección ontológica, procedencia auditable y evolución versionada sin inferencia de estados subjetivos</p>
           </div>
         </div>
 
@@ -405,8 +552,224 @@ onMounted(async () => {
 
           <div class="p-3 rounded-lg bg-slate-950/60 border border-slate-800/60 flex flex-wrap items-center justify-between text-xs text-slate-400 gap-2">
             <span>Proveedor activo: <strong class="text-slate-200 font-mono">MockProvider</strong> (simulado / $0 gasto)</span>
-            <span>Presupuesto límite ref.: <strong class="text-slate-200 font-mono">US$5.00/mes</strong> (inactivo en Fase 2)</span>
+            <span>Presupuesto límite ref.: <strong class="text-slate-200 font-mono">US$5.00/mes</strong> (inactivo en Fase 3)</span>
             <span>Bucles autónomos: <strong class="text-rose-400 font-mono">Deshabilitados</strong></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Controlled Learning & Versioned Evolution Section (Fase 3) -->
+      <section class="space-y-6">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+          <div>
+            <h2 class="text-xl font-bold text-white flex items-center gap-3">
+              Aprendizaje Controlado & Evolución Versionada
+              <span class="text-xs font-mono bg-cyan-950 text-cyan-300 px-2.5 py-0.5 rounded-full border border-cyan-800">
+                v{{ agent?.personality_version || 1 }}.0 ({{ versions.length }} snapshots)
+              </span>
+            </h2>
+            <p class="text-xs text-slate-400 mt-0.5">
+              Hechos consolidan rasgos y R (&le; 1.0); hipótesis ajustan tentativamente (R &le; 0.60); sueños guían semillas de curiosidad (R &le; 0.25) sin alterar rasgos
+            </p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              @click="openVersionsModal"
+              class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 transition font-mono"
+            >
+              Historial de Versiones / Revertir
+            </button>
+            <button
+              type="button"
+              @click="openLearnModal"
+              class="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm transition flex items-center gap-1.5"
+            >
+              <span>⚡</span> Ejecutar Aprendizaje Controlado
+            </button>
+          </div>
+        </div>
+
+        <!-- Stale Evidence Alert Banner -->
+        <div
+          v-if="agent?.evidence_audit?.has_stale_evidence"
+          class="p-4 rounded-xl bg-amber-950/60 border border-amber-700 text-amber-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+        >
+          <div class="space-y-1">
+            <div class="font-bold font-mono text-amber-300">
+              ⚠ Alerta de Auditoría Epistémica: Evidencia Rectificada o Purgada
+            </div>
+            <p class="text-amber-200/90">
+              Uno o más rasgos o intereses de la versión actual (v{{ agent?.personality_version }}.0) referencian memorias que fueron posteriormente rectificadas ({{ (agent.evidence_audit.superseded_memory_ids || []).length }}) o purgadas ({{ (agent.evidence_audit.purged_memory_ids || []).length }}). Se recomienda reevaluar o revertir a una versión previa.
+            </p>
+          </div>
+          <button
+            type="button"
+            @click="openVersionsModal"
+            class="px-3 py-1.5 rounded-lg bg-amber-900 hover:bg-amber-800 text-amber-100 border border-amber-700 font-mono shrink-0 transition"
+          >
+            Revisar / Revertir Versión
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Personality Traits Panel -->
+          <div class="rounded-xl bg-slate-900 border border-slate-800 p-5 space-y-4">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-bold font-mono text-white uppercase tracking-wider">Rasgos de Personalidad</h3>
+              <span class="text-xs font-mono text-slate-400">{{ personalityList.length }} registrados</span>
+            </div>
+
+            <div v-if="personalityList.length === 0" class="rounded-lg border border-dashed border-slate-800 p-6 text-center text-xs text-slate-500 font-mono">
+              Sin rasgos adquiridos. La personalidad comienza vacía y solo evoluciona con hechos o hipótesis verificables.
+            </div>
+
+            <div v-else class="space-y-3">
+              <div
+                v-for="trait in personalityList"
+                :key="trait.key"
+                :class="[
+                  'p-3.5 rounded-lg bg-slate-950 border space-y-2',
+                  hasStaleEvidenceInList(trait.evidence_memory_ids) ? 'border-amber-700/80' : 'border-slate-800'
+                ]"
+              >
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-xs font-mono font-bold text-slate-200">{{ trait.key }}</span>
+                  <div class="flex items-center gap-2">
+                    <span
+                      v-if="hasStaleEvidenceInList(trait.evidence_memory_ids)"
+                      class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-rose-950 text-rose-300 border border-rose-800"
+                    >
+                      ⚠ Evidencia obsoleta/purgada
+                    </span>
+                    <span
+                      :class="[
+                        'px-2 py-0.5 rounded text-[10px] font-mono font-semibold border',
+                        trait.consolidation_status === 'consolidated'
+                          ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                          : 'bg-amber-950 text-amber-300 border-amber-800'
+                      ]"
+                    >
+                      {{ trait.consolidation_status === 'consolidated' ? 'CONSOLIDADO (Fact)' : 'TENTATIVO (Hypothesis)' }}
+                    </span>
+                    <span class="text-xs font-mono font-bold text-cyan-400">{{ Number(trait.value).toFixed(2) }}</span>
+                  </div>
+                </div>
+                <div class="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                  <div
+                    class="h-full bg-cyan-500"
+                    :style="{ width: `${Math.min(100, Math.round(trait.value * 100))}%` }"
+                  ></div>
+                </div>
+                <div class="text-[11px] font-mono text-slate-500 flex flex-wrap items-center gap-1.5">
+                  <span>Evidencia ({{ (trait.evidence_memory_ids || []).length }}):</span>
+                  <span
+                    v-for="evId in (trait.evidence_memory_ids || [])"
+                    :key="evId"
+                    :class="[
+                      'px-1.5 py-0.5 rounded border text-[10px]',
+                      getEvidenceStatus(evId) === 'active'
+                        ? 'bg-slate-900 border-slate-800 text-slate-300'
+                        : getEvidenceStatus(evId) === 'superseded'
+                          ? 'bg-amber-950/70 border-amber-800 text-amber-300'
+                          : 'bg-rose-950/70 border-rose-800 text-rose-300'
+                    ]"
+                  >
+                    {{ evId.substring(0, 8) }}...
+                    <span v-if="getEvidenceStatus(evId) === 'superseded'">(rectificada)</span>
+                    <span v-else-if="getEvidenceStatus(evId) === 'purged'">(purgada)</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Acquired Interests & Oneiric Curiosity Seeds Panel -->
+          <div class="rounded-xl bg-slate-900 border border-slate-800 p-5 space-y-4">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-bold font-mono text-white uppercase tracking-wider">Intereses, Relevancia (R) & Semillas de Curiosidad</h3>
+              <span class="text-xs font-mono text-slate-400">{{ interestsList.length }} registrados</span>
+            </div>
+
+            <div v-if="interestsList.length === 0" class="rounded-lg border border-dashed border-slate-800 p-6 text-center text-xs text-slate-500 font-mono">
+              Sin relevancia adquirida (R = 0). Los sueños pueden sembrar preguntas exploratorias; los hechos e hipótesis consolidan intereses.
+            </div>
+
+            <div v-else class="space-y-3">
+              <div
+                v-for="item in interestsList"
+                :key="item.topic"
+                :class="[
+                  'p-3.5 rounded-lg bg-slate-950 border space-y-2',
+                  hasStaleEvidenceInList(item.evidence_memory_ids) ? 'border-amber-700/80' : 'border-slate-800'
+                ]"
+              >
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <span class="text-xs font-mono font-bold text-slate-100">{{ item.topic }}</span>
+                  <div class="flex items-center gap-2">
+                    <span
+                      v-if="hasStaleEvidenceInList(item.evidence_memory_ids)"
+                      class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-rose-950 text-rose-300 border border-rose-800"
+                    >
+                      ⚠ Evidencia obsoleta/purgada
+                    </span>
+                    <span
+                      :class="[
+                        'px-2 py-0.5 rounded text-[10px] font-mono font-semibold border',
+                        item.consolidation_status === 'consolidated'
+                          ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                          : item.consolidation_status === 'tentative'
+                            ? 'bg-amber-950 text-amber-300 border-amber-800'
+                            : 'bg-purple-950 text-purple-300 border-purple-800'
+                      ]"
+                    >
+                      {{
+                        item.consolidation_status === 'consolidated'
+                          ? 'CONSOLIDADO (Fact)'
+                          : item.consolidation_status === 'tentative'
+                            ? 'TENTATIVO (Hypothesis)'
+                            : 'SEMILLA ONÍRICA (Dream)'
+                      }}
+                    </span>
+                    <span class="text-xs font-mono text-indigo-300">
+                      R={{ Number(item.acquired_relevance).toFixed(2) }}
+                    </span>
+                    <span class="text-xs font-mono font-bold text-cyan-300">
+                      C={{ Number(item.curiosity_score).toFixed(2) }}
+                    </span>
+                  </div>
+                </div>
+
+                <div
+                  v-if="item.exploratory_query"
+                  class="p-2 rounded bg-slate-900 border border-slate-800 text-xs text-slate-300 font-sans"
+                >
+                  <span class="font-mono text-[10px] uppercase text-purple-300 mr-1.5">Indagación guiada:</span>
+                  <span>{{ item.exploratory_query }}</span>
+                </div>
+
+                <div class="text-[11px] font-mono text-slate-500 flex flex-wrap items-center gap-1.5">
+                  <span>Evidencia ({{ (item.evidence_memory_ids || []).length }}):</span>
+                  <span
+                    v-for="evId in (item.evidence_memory_ids || [])"
+                    :key="evId"
+                    :class="[
+                      'px-1.5 py-0.5 rounded border text-[10px]',
+                      getEvidenceStatus(evId) === 'active'
+                        ? 'bg-slate-900 border-slate-800 text-slate-300'
+                        : getEvidenceStatus(evId) === 'superseded'
+                          ? 'bg-amber-950/70 border-amber-800 text-amber-300'
+                          : 'bg-rose-950/70 border-rose-800 text-rose-300'
+                    ]"
+                  >
+                    {{ evId.substring(0, 8) }}...
+                    <span v-if="getEvidenceStatus(evId) === 'superseded'">(rectificada)</span>
+                    <span v-else-if="getEvidenceStatus(evId) === 'purged'">(purgada)</span>
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -974,6 +1337,246 @@ onMounted(async () => {
           <button
             type="button"
             @click="tombstonesModal?.close()"
+            class="px-4 py-2 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-slate-200 transition"
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- Modal: Ejecutar Aprendizaje Controlado (Fase 3) -->
+    <dialog
+      ref="learnModal"
+      closedby="any"
+      aria-labelledby="learnModalTitle"
+      @click="handleDialogClickFallback($event, learnModal)"
+      class="rounded-2xl bg-slate-900 border border-indigo-700/80 text-slate-100 p-6 max-w-2xl w-full shadow-2xl backdrop:bg-slate-950/80"
+    >
+      <form @submit.prevent="submitLearn" class="space-y-5">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <h3 id="learnModalTitle" class="text-base font-bold text-white font-mono">Ejecutar Operación de Aprendizaje Controlado</h3>
+          <button type="button" @click="learnModal?.close()" class="text-slate-400 hover:text-white text-lg">✕</button>
+        </div>
+
+        <p class="text-xs text-slate-400">
+          Selecciona una o más memorias vigentes como evidencia. Los sueños (<code class="text-purple-300">dream</code>) pueden guiar intereses y preguntas exploratorias (<code class="text-purple-300">R &le; 0.25</code>), pero nunca consolidan rasgos de personalidad como realidad vivida.
+        </p>
+
+        <!-- Selección de memorias vigentes -->
+        <div class="space-y-2">
+          <label class="text-xs font-mono text-slate-300 block">1. Memorias vigentes de evidencia (obligatorio):</label>
+          <div v-if="activeMemories.length === 0" class="p-4 rounded-lg bg-slate-950 border border-dashed border-slate-800 text-xs text-slate-500 font-mono">
+            No hay memorias vigentes disponibles. Registra primero una memoria para usarla como evidencia.
+          </div>
+          <div v-else class="max-h-44 overflow-y-auto space-y-1.5 pr-1">
+            <label
+              v-for="m in activeMemories"
+              :key="m.id"
+              class="flex items-start gap-2.5 p-2.5 rounded-lg bg-slate-950 border border-slate-800 hover:border-slate-700 cursor-pointer text-xs"
+            >
+              <input
+                type="checkbox"
+                :value="m.id"
+                v-model="learnForm.evidence_memory_ids"
+                class="mt-0.5 rounded bg-slate-900 border-slate-700 text-indigo-600"
+              />
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 font-mono text-[10px]">
+                  <span
+                    :class="[
+                      'px-1.5 py-0.5 rounded font-bold uppercase',
+                      m.epistemic_status === 'fact'
+                        ? 'bg-emerald-950 text-emerald-300'
+                        : m.epistemic_status === 'hypothesis'
+                          ? 'bg-amber-950 text-amber-300'
+                          : 'bg-purple-950 text-purple-300'
+                    ]"
+                  >
+                    {{ m.epistemic_status }}
+                  </span>
+                  <span class="text-slate-400">{{ m.type }}</span>
+                  <span class="text-slate-500">{{ m.id.substring(0, 8) }}...</span>
+                </div>
+                <p class="text-slate-300 truncate mt-1">{{ m.content }}</p>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Aviso epistémico cuando solo hay sueños seleccionados -->
+        <div
+          v-if="isOnlyDreamEvidenceSelected"
+          class="p-3 rounded-lg bg-purple-950/40 border border-purple-800/80 text-xs text-purple-200 font-mono"
+        >
+          ✦ Evidencia exclusivamente onírica seleccionada: los rasgos de personalidad están bloqueados para no confundir sueños con hechos reales. Define abajo el interés o pregunta exploratoria que el sueño inspira investigar (ej. "Averiguar cuál es la mejor playa para llevar un perro").
+        </div>
+
+        <!-- Rasgo de personalidad (opcional, deshabilitado si solo hay sueños) -->
+        <div class="p-3.5 rounded-lg bg-slate-950 border border-slate-800 space-y-3" :class="{ 'opacity-50': isOnlyDreamEvidenceSelected }">
+          <div class="text-xs font-mono text-slate-300">2. Rasgo de Personalidad (opcional, requiere Hecho o Hipótesis):</div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label for="learn_trait_key" class="text-[11px] font-mono text-slate-400 block mb-1">Identificador del rasgo:</label>
+              <input
+                id="learn_trait_key"
+                type="text"
+                v-model="learnForm.trait_key"
+                :disabled="isOnlyDreamEvidenceSelected"
+                placeholder="ej. analytical_rigor"
+                class="w-full text-xs font-mono px-3 py-1.5 rounded bg-slate-900 border border-slate-800 text-slate-200"
+              />
+            </div>
+            <div>
+              <div class="flex justify-between text-[11px] font-mono text-slate-400 mb-1">
+                <label for="learn_trait_val">Valor objetivo [0, 1]:</label>
+                <span class="text-cyan-300 font-bold">{{ Number(learnForm.trait_value).toFixed(2) }}</span>
+              </div>
+              <input
+                id="learn_trait_val"
+                type="range"
+                min="0.0"
+                max="1.0"
+                step="0.05"
+                v-model="learnForm.trait_value"
+                :disabled="isOnlyDreamEvidenceSelected"
+                class="w-full accent-cyan-500 cursor-pointer"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- Interés / Relevancia Adquirida R / Pregunta Exploratoria -->
+        <div class="p-3.5 rounded-lg bg-slate-950 border border-slate-800 space-y-3">
+          <div class="text-xs font-mono text-slate-300">3. Interés, Relevancia Adquirida (R) y Pregunta Exploratoria (opcional):</div>
+          <div class="space-y-2.5">
+            <div>
+              <label for="learn_interest_topic" class="text-[11px] font-mono text-slate-400 block mb-1">Tópico de interés:</label>
+              <input
+                id="learn_interest_topic"
+                type="text"
+                v-model="learnForm.interest_topic"
+                placeholder="ej. playas aptas para perros"
+                class="w-full text-xs font-mono px-3 py-1.5 rounded bg-slate-900 border border-slate-800 text-slate-200"
+              />
+            </div>
+            <div>
+              <label for="learn_exploratory_query" class="text-[11px] font-mono text-slate-400 block mb-1">Pregunta / Objetivo exploratorio guiado (especialmente para sueños e hipótesis):</label>
+              <input
+                id="learn_exploratory_query"
+                type="text"
+                v-model="learnForm.exploratory_query"
+                placeholder="ej. Averiguar cuál es la mejor playa para llevar un perro"
+                class="w-full text-xs px-3 py-1.5 rounded bg-slate-900 border border-slate-800 text-slate-200"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- Resumen de auditoría -->
+        <div class="space-y-1">
+          <label for="learn_summary" class="text-xs font-mono text-slate-300">Resumen de la operación (auditoría):</label>
+          <input
+            id="learn_summary"
+            type="text"
+            v-model="learnForm.summary"
+            required
+            class="w-full text-xs font-mono px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-slate-200"
+          />
+        </div>
+
+        <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+          <button
+            type="button"
+            @click="learnModal?.close()"
+            class="px-4 py-2 rounded-lg text-xs font-mono text-slate-400 hover:text-white"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            :disabled="learnForm.evidence_memory_ids.length === 0"
+            class="px-4 py-2 rounded-lg text-xs font-semibold font-mono bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white transition"
+          >
+            Aplicar Nueva Versión
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Modal: Historial de Versiones y Reversión (Fase 3) -->
+    <dialog
+      ref="versionsModal"
+      closedby="any"
+      aria-labelledby="versionsModalTitle"
+      @click="handleDialogClickFallback($event, versionsModal)"
+      class="rounded-2xl bg-slate-900 border border-slate-700 text-slate-100 p-6 max-w-2xl w-full shadow-2xl backdrop:bg-slate-950/80"
+    >
+      <div class="space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <h3 id="versionsModalTitle" class="text-base font-bold text-white font-mono">Historial de Versiones & Reversión Auditable</h3>
+          <button type="button" @click="versionsModal?.close()" class="text-slate-400 hover:text-white text-lg">✕</button>
+        </div>
+
+        <p class="text-xs text-slate-400">
+          Cada cambio genera un snapshot inmutable. Revertir a una versión anterior crea una nueva versión con <code class="text-cyan-300">operation_type = revert</code> sin borrar el historial.
+        </p>
+
+        <div class="space-y-1">
+          <label for="revert_reason_input" class="text-xs font-mono text-slate-400">Motivo en caso de reversión:</label>
+          <input
+            id="revert_reason_input"
+            type="text"
+            v-model="revertReason"
+            class="w-full text-xs font-mono px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-200"
+          />
+        </div>
+
+        <div class="max-h-80 overflow-y-auto space-y-2.5 pr-1">
+          <div
+            v-for="v in versions"
+            :key="v.id"
+            class="p-3.5 rounded-lg bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono"
+          >
+            <div class="space-y-1">
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800 font-bold">
+                  v{{ v.version }}.0
+                </span>
+                <span class="uppercase text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
+                  {{ v.operation_type }}
+                </span>
+                <span v-if="v.reverted_from_version" class="text-[11px] text-amber-400">
+                  ↺ restaurado desde v{{ v.reverted_from_version }}.0
+                </span>
+              </div>
+              <div class="text-slate-200 font-sans">{{ v.summary }}</div>
+              <div class="text-[11px] text-slate-500">
+                Evidencias: {{ (v.evidence_memory_ids || []).length }} |
+                Fecha: {{ v.created_at ? new Date(v.created_at).toLocaleString() : '—' }}
+              </div>
+            </div>
+
+            <div class="shrink-0">
+              <button
+                v-if="v.version < (agent?.personality_version || 1)"
+                type="button"
+                @click="submitRevert(v.version)"
+                class="px-3 py-1.5 rounded bg-amber-950/80 hover:bg-amber-900 text-amber-300 border border-amber-800 transition text-xs"
+              >
+                Revertir a v{{ v.version }}.0
+              </button>
+              <span v-else class="text-[11px] text-emerald-400 px-2 py-1">
+                Versión activa
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-end pt-3 border-t border-slate-800">
+          <button
+            type="button"
+            @click="versionsModal?.close()"
             class="px-4 py-2 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-slate-200 transition"
           >
             Cerrar

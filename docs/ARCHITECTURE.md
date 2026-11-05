@@ -2,9 +2,9 @@
 
 ## Límites de componentes
 
-- `backend/`: API REST Laravel 13; posee la persistencia transaccional y expone agentes.
-- `cognitive-engine/`: biblioteca Python 3.12 independiente; concentra configuración cognitiva, curiosidad y contratos de proveedores.
-- `frontend/`: aplicación SPA en Vue 3, Vite y Tailwind CSS para la interfaz de observación y auditoría local (Fase 2).
+- `backend/`: API REST Laravel 13; posee la persistencia transaccional y expone agentes, memorias y aprendizaje versionado.
+- `cognitive-engine/`: biblioteca Python 3.12 independiente; concentra configuración cognitiva, curiosidad, aprendizaje controlado y contratos de proveedores.
+- `frontend/`: aplicación SPA en Vue 3, Vite y Tailwind CSS para la interfaz de observación, auditoría de memorias y control de aprendizaje local (Fases 2 y 3).
 - `infrastructure/`: espacio para despliegue y configuración futura; Compose inicial vive en la raíz para facilitar el arranque.
 - `experiments/`: experimentos reproducibles aislados del runtime.
 - `docs/`: decisiones y principios vigentes.
@@ -31,6 +31,17 @@ La interfaz web en `frontend/` es una SPA basada en Vue 3, Vite y Tailwind CSS d
 - **Trazabilidad y rectificación:** Muestra la cadena de versiones (`supersedes_id`, `superseded_at`) y el historial de registros purgados en `memory_tombstones`.
 - **Operaciones controladas:** Permite crear entradas con origen `manual_entry`, rectificar y eliminar registros exclusivamente bajo demanda del usuario en entorno local.
 - **Límites epistémicos y éticos:** No infiere ni renderiza estados antropomórficos o subjetivos (ánimo, emociones, dolor o conciencia); todo estado se presenta como dato computacional observable. Sin llamadas externas, analíticas ni dependencias de red ajenas a localhost.
+
+## Aprendizaje controlado y evolución versionada (Fase 3)
+
+El sistema evalúa y consolida cambios en personalidad, intereses y relevancia adquirida ($R$) bajo demanda mediante una tabla de historial inmutable `agent_learning_versions` y reglas deterministas en `cognitive-engine/personality/`:
+- **Evidencia obligatoria y vigencia:** Toda operación de aprendizaje requiere una lista no vacía de `evidence_memory_ids` pertenecientes al agente y vigentes (`superseded_at IS NULL`). Las memorias obsoletas/rectificadas son rechazadas como evidencia.
+- **Escala epistémica de tres niveles:**
+  - `fact` (Hecho): Consolida rasgos de personalidad (`consolidation_status = consolidated`) y permite que la relevancia adquirida $R$ crezca en el rango $[0, 1.0]$.
+  - `hypothesis` (Hipótesis): Produce ajustes tentativos (`consolidation_status = tentative`) ponderados por la `confidence` de las memorias y acota la relevancia adquirida $R$ a un máximo de `0.60`.
+  - `dream` (`oneiric`): Nunca consolida hechos ni rasgos de personalidad como experiencia real (`consolidation_status = oneiric_seed`, prohibido alterar rasgos de personalidad si la evidencia es exclusivamente onírica), pero **guía la curiosidad del sistema** generando intereses/consultas exploratorias (`exploratory_query`) y un impulso exploratorio inicial en $R$ acotado a un máximo de `0.25`, conservando explícitamente la etiqueta de origen onírico (`dream`) y calculando su puntuación de curiosidad $C = 0.30N + 0.25I + 0.30A + 0.15R$.
+- **Versionado e historial inmutable:** Cada operación (`operation_type`: `initial`, `learning`, `revert`) incrementa `personality_version` en `agents`, actualiza `attributes` (`personality` e `interests`) y guarda un snapshot completo en `agent_learning_versions`.
+- **Reversión auditable (Rollback):** Revertir a una versión previa no destruye historial; crea una nueva versión con `operation_type = revert` y `reverted_from_version`, restaurando exactamente el snapshot de `attributes` de la versión objetivo.
 
 ## Motor cognitivo y proveedores
 

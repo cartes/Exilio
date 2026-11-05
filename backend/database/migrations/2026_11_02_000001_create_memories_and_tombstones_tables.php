@@ -18,7 +18,11 @@ return new class extends Migration {
             $table->double('confidence')->nullable();
             $table->string('evidence_ref')->nullable();
             $table->timestampTz('occurred_at')->nullable();
-            $table->foreignUuid('supersedes_id')->nullable()->constrained('memories')->nullOnDelete();
+            if (DB::getDriverName() === 'pgsql') {
+                $table->uuid('supersedes_id')->nullable();
+            } else {
+                $table->foreignUuid('supersedes_id')->nullable()->constrained('memories')->nullOnDelete();
+            }
             $table->timestampTz('superseded_at')->nullable();
             $table->jsonb('metadata')->default('{}');
             $table->timestampsTz();
@@ -27,6 +31,12 @@ return new class extends Migration {
             $table->index(['agent_id', 'epistemic_status']);
             $table->index(['agent_id', 'superseded_at']);
         });
+
+        if (DB::getDriverName() === 'pgsql') {
+            Schema::table('memories', function (Blueprint $table): void {
+                $table->foreign('supersedes_id')->references('id')->on('memories')->nullOnDelete();
+            });
+        }
 
         Schema::create('memory_tombstones', function (Blueprint $table): void {
             $table->uuid('id')->primary();
