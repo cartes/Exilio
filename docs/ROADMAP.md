@@ -70,13 +70,19 @@ Se mantienen los límites de `FOUNDATION.md`: no asumir conciencia, sentimientos
 
 **Criterio de salida:** cada cambio en personalidad, intereses o relevancia adquirida ($R$) puede rastrearse hasta sus memorias de evidencia, respeta los límites epistémicos de hechos, hipótesis y sueños, incrementa la versión del agente y puede revertirse auditadamente.
 
-## Fase 4 — Evaluación de integraciones externas
+## Fase 4 — Integraciones externas & Diálogo introspectivo (en curso)
 
-**Objetivo:** decidir, sin activación automática, si se habilitan servicios externos.
+**Objetivo:** integrar Gemini como proveedor de lenguaje natural y habilitar diálogo interactivo anclado a la introspección del agente con control de gasto verificable.
 
-**Decisiones previas:** necesidad concreta, privacidad, permisos, telemetría y controles efectivos de gasto. El presupuesto de referencia de US$5/mes no es autorización para gastar. El acceso web futuro sería solo de lectura y cualquier proveedor real requeriría aprobación y controles verificables.
+**Decisiones acordadas:**
 
-**Criterio de salida propuesto:** una decisión documentada por integración, con pruebas y controles externos antes de habilitarla. El despliegue y las llamadas reales permanecen fuera de Fase 0.
+- **Proveedor y modelo:** Gemini API (con modelo predeterminado `gemini-2.5-flash` / `gemini-1.5-flash`), configurable vía `GEMINI_API_KEY` en entorno `.env` local.
+- **Anclaje introspectivo estricto (Opción B + A):** Antes de cada turno conversacional, el sistema compila un snapshot de introspección con el estado exacto de EXILIO-001 (versión activa, rasgos consolidados y tentativos, intereses, curiosidad $C$, semillas oníricas y memorias recientes clasificadas). El prompt del sistema fuerza al modelo a hablar exclusivamente desde estos datos verificados, prohibiendo inventar memorias o afirmar consciencia subjetiva.
+- **Registro conversacional auditable:** Cada mensaje del usuario se persiste como memoria episódica (`user_input`), y la interacción generada por el agente queda trazada y disponible en el historial de conversación.
+- **Compuerta presupuestaria y telemetría:** Registro en tabla `ai_usage_logs` con recuento de tokens (prompt, completion) y estimación de coste en USD frente al límite de referencia de US$5.00/mes. Si se supera el límite o no se proporciona `GEMINI_API_KEY`, el sistema conmuta automáticamente al generador introspectivo local o proveedor simulado (`MockProvider`) protegiendo el presupuesto.
+- **Consola de diálogo en frontend:** Panel interactivo en Vue 3 para conversar en tiempo real con EXILIO-001, visualizar telemetría de gasto en vivo y auditar las fuentes de datos que fundamentan sus respuestas.
+
+**Criterio de salida:** el usuario puede dialogar interactivamente con EXILIO-001 desde la interfaz; el agente responde en lenguaje natural fundamentándose con precisión en sus memorias y rasgos; el consumo de tokens y presupuesto de US$5/mes se audita y limita efectivamente; y ante ausencia de clave o exceso de presupuesto el sistema degrada de manera segura sin interrumpir la observación.
 
 ## Revisión entre fases
 

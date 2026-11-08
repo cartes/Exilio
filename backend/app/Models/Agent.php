@@ -105,4 +105,14 @@ class Agent extends Model
     {
         return $this->hasMany(AgentLearningVersion::class);
     }
+
+    public function aiUsageLogs(): HasMany
+    {
+        return $this->hasMany(AiUsageLog::class);
+    }
+
+    public function chatMessages(): HasMany
+    {
+        return $this->hasMany(AgentChatMessage::class);
+    }
 }

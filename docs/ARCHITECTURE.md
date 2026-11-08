@@ -43,6 +43,26 @@ El sistema evalúa y consolida cambios en personalidad, intereses y relevancia a
 - **Versionado e historial inmutable:** Cada operación (`operation_type`: `initial`, `learning`, `revert`) incrementa `personality_version` en `agents`, actualiza `attributes` (`personality` e `interests`) y guarda un snapshot completo en `agent_learning_versions`.
 - **Reversión auditable (Rollback):** Revertir a una versión previa no destruye historial; crea una nueva versión con `operation_type = revert` y `reverted_from_version`, restaurando exactamente el snapshot de `attributes` de la versión objetivo.
 
+## Integración de IA Real & Diálogo Introspectivo (Fase 4)
+
+La arquitectura integra Gemini mediante un patrón híbrido de introspección cognitiva anclada (RAG sobre el estado interno del agente):
+- **Introspection Context Builder (`backend/app/Services/IntrospectionService.php`):** Compila el estado computacional del agente:
+  - Identidad, versión de personalidad actual (`vX.0`) y resumen del último cambio.
+  - Rasgos de personalidad clasificados (`consolidated` por hechos vs `tentative` por hipótesis) con sus IDs de evidencia.
+  - Intereses activos, relevancia adquirida $R \in [0, 1]$, cálculo de curiosidad $C$ y semillas oníricas con preguntas exploratorias (`exploratory_query`).
+  - Memorias recientes organizadas según la diferenciación epistémica (`fact`, `hypothesis` con certeza %, `dream` con advertencia onírica).
+  - Auditoría de evidencia obsoleta o purgada.
+- **Adaptador Gemini y Compuerta Presupuestaria (`GeminiService` y `cognitive-engine/providers/gemini.py`):**
+  - Conexión vía API REST a Gemini (`gemini-2.5-flash` / `gemini-1.5-flash`) usando `GEMINI_API_KEY`.
+  - Compuerta de gasto: Verifica el consumo acumulado mensual en `ai_usage_logs`. Si supera los US$5.00/mes o no hay clave, activa un fallback seguro al generador introspectivo local o `MockProvider`.
+  - Telemetría: Registra cada llamada con tokens de entrada, salida, coste estimado en USD y timestamp.
+- **Endpoints de Diálogo (`backend/routes/api.php`):**
+  - `POST /api/agents/{agent}/chat`: Procesa el mensaje del observador, persiste la memoria episódica (`user_input`), ejecuta la respuesta fundamentada con Gemini y devuelve la respuesta junto a la telemetría y metadatos de fundamentación.
+  - `GET /api/agents/{agent}/chat`: Retorna el historial de interacción.
+  - `GET /api/agents/{agent}/ai-usage`: Consulta el consumo presupuestario del mes actual frente al límite de US$5.00.
+- **Consola de Diálogo en Frontend (`frontend/src/App.vue`):**
+  - Componente interactivo para conversar con EXILIO-001, con visualizador de consumo de cuota mensual y badges de fuentes referenciadas en cada respuesta.
+
 ## Motor cognitivo y proveedores
 
 La configuración vive en variables de entorno con valores predeterminados reproducibles. La curiosidad es una función pura de componentes normalizados y pesos configurables. `AIProvider` define una interfaz asíncrona sin depender de Gemini; un `MockProvider` local sirve para pruebas. El adaptador Gemini futuro deberá mapear el contrato sin contaminar módulos cognitivos.

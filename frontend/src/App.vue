@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, useTemplateRef } from 'vue'
+import { ref, computed, onMounted, nextTick, useTemplateRef } from 'vue'
 
 const agent = ref(null)
 const memories = ref([])
@@ -8,6 +8,13 @@ const versions = ref([])
 const loading = ref(true)
 const error = ref(null)
 const successMessage = ref(null)
+
+// Chat state (Fase 4)
+const chatMessages = ref([])
+const chatTelemetry = ref(null)
+const chatInput = ref('')
+const sendingChat = ref(false)
+const chatBoxRef = useTemplateRef('chatBoxRef')
 
 // Filters
 const selectedType = ref('all')
@@ -421,10 +428,108 @@ async function submitDelete() {
   }
 }
 
+async function fetchChat() {
+  if (!agent.value) return
+  try {
+    const res = await fetch(`/api/agents/${agent.value.id}/chat`)
+    if (res.ok) {
+      const data = await res.json()
+      chatMessages.value = data.messages || []
+      if (data.telemetry) {
+        chatTelemetry.value = data.telemetry
+      }
+      await scrollToBottom()
+    }
+  } catch (err) {
+    console.warn('Fallo al obtener historial de chat:', err)
+  }
+  await fetchAiUsage()
+}
+
+async function fetchAiUsage() {
+  if (!agent.value) return
+  try {
+    const res = await fetch(`/api/agents/${agent.value.id}/ai-usage`)
+    if (res.ok) {
+      const usageData = await res.json()
+      chatTelemetry.value = {
+        ...chatTelemetry.value,
+        ...usageData,
+      }
+    }
+  } catch (err) {
+    console.warn('Fallo al obtener telemetría de IA:', err)
+  }
+}
+
+async function scrollToBottom() {
+  await nextTick()
+  if (chatBoxRef.value) {
+    chatBoxRef.value.scrollTop = chatBoxRef.value.scrollHeight
+  }
+}
+
+async function sendChat(predefinedText) {
+  const text = (typeof predefinedText === 'string' ? predefinedText : chatInput.value || '').trim()
+  if (!text || !agent.value || sendingChat.value) return
+
+  sendingChat.value = true
+  error.value = null
+  chatInput.value = ''
+
+  const tempUserMsg = {
+    id: 'temp-' + Date.now(),
+    role: 'user',
+    content: text,
+    created_at: new Date().toISOString(),
+    grounding_snapshot: null,
+  }
+  chatMessages.value.push(tempUserMsg)
+  await scrollToBottom()
+
+  try {
+    const res = await fetch(`/api/agents/${agent.value.id}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ message: text }),
+    })
+
+    if (!res.ok) {
+      const data = await res.json()
+      throw new Error(data.message || 'Error al comunicarse con EXILIO-001')
+    }
+
+    const data = await res.json()
+    chatMessages.value = chatMessages.value.filter(m => m.id !== tempUserMsg.id)
+    if (data.user_message) {
+      chatMessages.value.push(data.user_message)
+    }
+    const agentMsg = data.agent_message || data.assistant_message
+    if (agentMsg) {
+      chatMessages.value.push(agentMsg)
+    }
+    if (data.telemetry) {
+      chatTelemetry.value = {
+        ...chatTelemetry.value,
+        ...data.telemetry,
+      }
+    }
+    await scrollToBottom()
+
+    // Refresh memories and agent state (user message is saved as episodic fact)
+    await Promise.all([fetchMemories(), fetchAgent()])
+  } catch (err) {
+    error.value = err.message
+    chatMessages.value = chatMessages.value.filter(m => m.id !== tempUserMsg.id)
+  } finally {
+    sendingChat.value = false
+  }
+}
+
 onMounted(async () => {
   const currentAgent = await fetchAgent()
   if (currentAgent) {
-    await Promise.all([fetchMemories(), fetchVersions()])
+    await Promise.all([fetchMemories(), fetchVersions(), fetchChat()])
   }
 })
 </script>
@@ -439,7 +544,7 @@ onMounted(async () => {
           <div>
             <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
               PROYECTO EXILIO
-              <span class="text-xs font-mono font-normal px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">Fase 3: Aprendizaje Controlado & Auditoría</span>
+              <span class="text-xs font-mono font-normal px-2 py-0.5 rounded bg-slate-800 text-cyan-300 border border-cyan-800">Fase 4: Diálogo Introspectivo (Gemini 2.5) & Aprendizaje Controlado</span>
             </h1>
             <p class="text-xs text-slate-400">Inspección ontológica, procedencia auditable y evolución versionada sin inferencia de estados subjetivos</p>
           </div>
@@ -588,10 +693,226 @@ onMounted(async () => {
           </div>
 
           <div class="p-3 rounded-lg bg-slate-950/60 border border-slate-800/60 flex flex-wrap items-center justify-between text-xs text-slate-400 gap-2">
-            <span>Proveedor activo: <strong class="text-slate-200 font-mono">MockProvider</strong> (simulado / $0 gasto)</span>
-            <span>Presupuesto límite ref.: <strong class="text-slate-200 font-mono">US$5.00/mes</strong> (inactivo en Fase 3)</span>
+            <span>Proveedor activo: <strong class="text-cyan-300 font-mono">Gemini 2.5 Flash / Introspección Local</strong></span>
+            <span>
+              Presupuesto ref.: <strong class="text-slate-200 font-mono">US$5.00/mes</strong>
+              <span v-if="chatTelemetry" class="text-emerald-400 ml-1">
+                (Gastado: ${{ Number(chatTelemetry.month_cost_usd || 0).toFixed(4) }} | Restante: ${{ Number(chatTelemetry.remaining_budget_usd || 5.0).toFixed(4) }})
+              </span>
+            </span>
             <span>Bucles autónomos: <strong class="text-rose-400 font-mono">Deshabilitados</strong></span>
           </div>
+        </div>
+      </section>
+
+      <!-- Consola de Diálogo Introspectivo con EXILIO-001 (Fase 4 - Gemini) -->
+      <section class="space-y-6">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+          <div>
+            <h2 class="text-xl font-bold text-white flex items-center gap-3">
+              Consola de Diálogo Introspectivo con EXILIO-001
+              <span class="text-xs font-mono bg-cyan-950 text-cyan-300 px-2.5 py-0.5 rounded-full border border-cyan-800 flex items-center gap-1.5">
+                <span class="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-ping"></span>
+                Gemini 2.5 Flash / Anclaje Epistémico
+              </span>
+            </h2>
+            <p class="text-xs text-slate-400 mt-0.5">
+              Diálogo directo con el agente fundamentado exclusivamente en sus datos computacionales reales en PostgreSQL (personalidad, intereses, versiones y memoria autobiográfica).
+            </p>
+          </div>
+
+          <!-- Telemetría de Presupuesto y Tokens -->
+          <div class="flex flex-wrap items-center gap-2 text-xs font-mono">
+            <div class="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 flex items-center gap-2">
+              <span class="text-slate-400">Tokens Mes:</span>
+              <span class="text-cyan-300 font-bold">{{ chatTelemetry?.total_tokens ?? chatTelemetry?.month_tokens ?? 0 }}</span>
+            </div>
+            <div class="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 flex items-center gap-2">
+              <span class="text-slate-400">Gasto:</span>
+              <span class="text-emerald-400 font-bold">${{ Number(chatTelemetry?.current_month_spend_usd ?? chatTelemetry?.month_cost_usd ?? 0).toFixed(4) }}</span>
+              <span class="text-slate-500">/ ${{ Number(chatTelemetry?.monthly_budget_usd || 5.0).toFixed(2) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Función & Ejemplos: Consola de Diálogo Introspectivo -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 text-xs space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <span class="text-xs font-mono font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-2">
+              <span>💬</span> ¿Qué hace el Diálogo Introspectivo con IA?
+            </span>
+            <span class="text-[11px] font-mono text-slate-400">Sin alucinación ontológica | Persistencia autobiográfica</span>
+          </div>
+          <p class="text-slate-300 leading-relaxed text-xs">
+            Conecta un modelo LLM (Gemini 2.5 Flash) con el motor cognitivo de EXILIO-001 inyectando su estado computacional actual en el system instruction. Cada interacción del usuario se persiste automáticamente en PostgreSQL como memoria episódica (<code class="text-emerald-300 font-mono">type: episodic, epistemic_status: fact, origin: user_input</code>). EXILIO responde como un sistema computacional sin afirmar conciencia biológica ni sentimientos subjetivos.
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t border-slate-800/80 text-[11px]">
+            <div class="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80 space-y-1">
+              <span class="font-mono font-bold text-cyan-400 block">Anclaje en Datos Reales:</span>
+              <p class="text-slate-400">El agente solo conoce lo que está registrado en su base de datos: versión actual, rasgos, relevancia R y memorias vigentes.</p>
+              <div class="text-[10px] font-mono text-slate-500 pt-1 border-t border-slate-900">
+                <strong class="text-slate-400">Ejemplo:</strong> <em>"¿Qué rasgos tienes?"</em> &rarr; Reporta sus rasgos exactos en PostgreSQL con sus evidencias trazables.
+              </div>
+            </div>
+
+            <div class="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80 space-y-1">
+              <span class="font-mono font-bold text-amber-400 block">Separación Epistémica:</span>
+              <p class="text-slate-400">Distingue hechos observados de inferencias tentativas e ideas oníricas; nunca trata los sueños como realidad vivida.</p>
+              <div class="text-[10px] font-mono text-slate-500 pt-1 border-t border-slate-900">
+                <strong class="text-slate-400">Ejemplo:</strong> <em>"¿Qué soñaste?"</em> &rarr; Relata la memoria onírica aclarando que es una simulación interna sin valor de hecho.
+              </div>
+            </div>
+
+            <div class="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80 space-y-1">
+              <span class="font-mono font-bold text-emerald-400 block">Control de Presupuesto:</span>
+              <p class="text-slate-400">Límite duro de US$5.00/mes. Si se agota o si no hay API key configurada, conmuta de inmediato a fallback local.</p>
+              <div class="text-[10px] font-mono text-slate-500 pt-1 border-t border-slate-900">
+                <strong class="text-slate-400">Ejemplo:</strong> Telemetría en tiempo real registra tokens y costo estimado por cada intercambio.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat Console Box -->
+        <div class="rounded-xl bg-slate-900 border border-slate-800 overflow-hidden flex flex-col">
+          <!-- Quick Prompt Chips -->
+          <div class="p-3 bg-slate-950/80 border-b border-slate-800 flex flex-wrap items-center gap-2">
+            <span class="text-[11px] font-mono text-slate-400 mr-1">Preguntas sugeridas:</span>
+            <button
+              type="button"
+              @click="sendChat('¿Cuál es tu estado actual y qué rasgos tienes en tu modelo?')"
+              :disabled="sendingChat"
+              class="px-2.5 py-1 rounded-full text-xs bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-800/60 transition disabled:opacity-50"
+            >
+              ¿Cuál es tu estado actual y tus rasgos?
+            </button>
+            <button
+              type="button"
+              @click="sendChat('¿En qué versión de evolución estás y cómo ha sido tu historial de mejoras?')"
+              :disabled="sendingChat"
+              class="px-2.5 py-1 rounded-full text-xs bg-slate-900 hover:bg-slate-800 text-indigo-300 border border-indigo-800/60 transition disabled:opacity-50"
+            >
+              ¿En qué versión estás y cómo has evolucionado?
+            </button>
+            <button
+              type="button"
+              @click="sendChat('¿Qué te da curiosidad ahora mismo y qué señales cognitivas tienes activas?')"
+              :disabled="sendingChat"
+              class="px-2.5 py-1 rounded-full text-xs bg-slate-900 hover:bg-slate-800 text-emerald-300 border border-emerald-800/60 transition disabled:opacity-50"
+            >
+              ¿Qué te da curiosidad y cómo calculas tu C?
+            </button>
+            <button
+              type="button"
+              @click="sendChat('¿Tienes hipótesis o recuerdos que quieras explorar o verificar?')"
+              :disabled="sendingChat"
+              class="px-2.5 py-1 rounded-full text-xs bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-800/60 transition disabled:opacity-50"
+            >
+              ¿Tienes hipótesis o recuerdos que explorar?
+            </button>
+          </div>
+
+          <!-- Messages Scroll Area -->
+          <div
+            ref="chatBoxRef"
+            class="p-4 space-y-4 min-h-[280px] max-h-[460px] overflow-y-auto bg-slate-950/40"
+          >
+            <!-- Empty state -->
+            <div
+              v-if="chatMessages.length === 0"
+              class="py-12 text-center space-y-2 border border-dashed border-slate-800 rounded-lg mx-auto max-w-lg"
+            >
+              <div class="text-2xl">🤖</div>
+              <p class="text-sm font-semibold text-slate-300">Inicia una conversación con EXILIO-001</p>
+              <p class="text-xs text-slate-400 max-w-md mx-auto px-4">
+                Puedes preguntarle sobre lo que ha aprendido, sus rasgos consolidados, sus intereses oníricos o su estado actual. Haz clic en una pregunta sugerida o escribe tu propio mensaje abajo.
+              </p>
+            </div>
+
+            <!-- Messages list -->
+            <div
+              v-for="msg in chatMessages"
+              :key="msg.id"
+              :class="[
+                'flex flex-col',
+                msg.role === 'user' ? 'items-end' : 'items-start'
+              ]"
+            >
+              <!-- Role Badge -->
+              <div class="flex items-center gap-2 mb-1 px-1 text-[11px] font-mono text-slate-400">
+                <span v-if="msg.role === 'user'" class="text-cyan-400 font-bold">Cristian (Auditor)</span>
+                <span v-else class="text-indigo-300 font-bold flex items-center gap-1.5">
+                  <span class="h-1.5 w-1.5 rounded-full bg-indigo-400"></span>
+                  EXILIO-001
+                </span>
+                <span>{{ msg.created_at ? new Date(msg.created_at).toLocaleTimeString() : '' }}</span>
+              </div>
+
+              <!-- Message Bubble -->
+              <div
+                :class="[
+                  'max-w-2xl rounded-2xl px-4 py-3 text-sm leading-relaxed shadow',
+                  msg.role === 'user'
+                    ? 'bg-cyan-950/80 border border-cyan-800 text-cyan-100 rounded-tr-none'
+                    : 'bg-slate-900 border border-slate-800 text-slate-100 rounded-tl-none'
+                ]"
+              >
+                <p class="whitespace-pre-line">{{ msg.content }}</p>
+
+                <!-- Grounding Metadata Badge for Agent Responses -->
+                <div
+                  v-if="(msg.role === 'agent' || msg.role === 'assistant') && (msg.grounding_snapshot || msg.grounding_metadata)"
+                  class="mt-3 pt-2.5 border-t border-slate-800/80 flex flex-wrap items-center gap-2 text-[10px] font-mono text-slate-400"
+                >
+                  <span class="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-300">
+                    Proveedor: {{ msg.provider || (msg.grounding_snapshot || msg.grounding_metadata)?.provider || 'gemini-2.5-flash' }}
+                  </span>
+                  <span class="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-cyan-300">
+                    Versión base: v{{ (msg.grounding_snapshot || msg.grounding_metadata)?.personality_version || (msg.grounding_snapshot || msg.grounding_metadata)?.agent_version || 1 }}.0
+                  </span>
+                  <span class="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-emerald-300">
+                    Memorias activas: {{ (msg.grounding_snapshot || msg.grounding_metadata)?.active_memories_count || 0 }}
+                  </span>
+                  <span v-if="msg.tokens_used || (msg.grounding_snapshot || msg.grounding_metadata)?.tokens_total" class="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-300">
+                    Tokens: {{ msg.tokens_used || (msg.grounding_snapshot || msg.grounding_metadata)?.tokens_total }} (${{ Number(msg.cost_usd || (msg.grounding_snapshot || msg.grounding_metadata)?.cost_usd || 0).toFixed(5) }})
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Loading indicator when assistant is replying -->
+            <div v-if="sendingChat" class="flex flex-col items-start">
+              <div class="flex items-center gap-2 mb-1 px-1 text-[11px] font-mono text-slate-400">
+                <span class="text-indigo-300 font-bold flex items-center gap-1.5">
+                  <span class="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-ping"></span>
+                  EXILIO-001 procesando introspección...
+                </span>
+              </div>
+              <div class="bg-slate-900 border border-slate-800 text-slate-400 px-4 py-3 rounded-2xl rounded-tl-none text-xs font-mono flex items-center gap-2">
+                <span class="animate-spin text-cyan-400">◐</span> Consultando memoria autobiográfica y generando respuesta anclada...
+              </div>
+            </div>
+          </div>
+
+          <!-- Chat Input Bar -->
+          <form @submit.prevent="sendChat()" class="p-3 bg-slate-900 border-t border-slate-800 flex items-center gap-3">
+            <input
+              type="text"
+              v-model="chatInput"
+              :disabled="sendingChat"
+              placeholder="Pregúntale a EXILIO-001 sobre su estado, memoria, versión o curiosidad..."
+              class="flex-1 text-xs px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 disabled:opacity-50"
+            />
+            <button
+              type="submit"
+              :disabled="!chatInput.trim() || sendingChat"
+              class="px-5 py-2.5 rounded-xl text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white shadow-sm transition flex items-center gap-2 font-mono shrink-0"
+            >
+              <span v-if="sendingChat" class="animate-spin">◐</span>
+              <span>{{ sendingChat ? 'Enviando...' : 'Enviar Diálogo' }}</span>
+            </button>
+          </form>
         </div>
       </section>
 
