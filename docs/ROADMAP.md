@@ -99,6 +99,23 @@ Se mantienen los límites de `FOUNDATION.md`: no asumir conciencia, sentimientos
 
 **Criterio de salida:** un sueño aprobado aparece como `dream` auditable con sus fuentes, aumenta la curiosidad hacia una pregunta verificable sin consolidar hechos ni rasgos, y puede revertirse como cualquier versión.
 
+## Fase 6 — Scouts de investigación web (en curso)
+
+**Decisión:** el usuario autorizó (2026-11-09) que EXILIO-001 investigue en internet mediante agentes acotados («scouts»), con estas elecciones: (1) **buscador general** (SearXNG autoalojado, sin clave), (2) **Laravel primero y Python después**, (3) **EXILIO propone** las misiones.
+
+**Decisiones acordadas (Fase 6a):**
+
+- **Solo lectura y sin código generado:** el scout es código fijo parametrizado por una carta de misión (tema, pregunta, máximo de páginas). No ejecuta código producido por agentes ni envía formularios, cookies ni JavaScript.
+- **Propone EXILIO, aprueba el auditor:** `propose` elige el interés de mayor curiosidad C (sin IA) y crea una misión `proposed`. Nada corre sin `approve` + `run` explícitos. Sin bucles ni ejecución programada.
+- **Puerta web inmutable (`config/research.php` + `WebGate`):** solo http/https en puertos 80/443, bloqueo de IPs privadas/loopback/reservadas (anti-SSRF, con resolución fijada y revalidada en cada redirección), `robots.txt`, tipos de contenido y tamaño/tiempo máximos, lista de dominios bloqueados y topes duros que la carta de misión no puede superar. Botón de cancelación que detiene el scout entre páginas.
+- **Búsqueda abierta:** al no haber lista blanca de dominios, el control se apoya en la puerta, el tope de páginas (máx. 2 por dominio) y la aprobación humana de cada hallazgo.
+- **Epistemología:** el contenido web es dato no confiable. Un hallazgo aprobado se guarda como `fact` solo en el sentido observable «la fuente X afirma Y» (`origin: system_event`, con URL, fecha y hash). Que lo afirmado sea cierto sigue siendo una hipótesis y queda para la síntesis con modelo (6b).
+- **Sin IA en 6a:** la extracción es determinista (texto limpio y frases relevantes por coincidencia con la pregunta); no consume presupuesto.
+
+**Fases siguientes (cada una requiere revisión):** 6b síntesis con modelo bajo la compuerta de US$5/mes (hipótesis con confianza y procedencia); 6c varios scouts y misiones desde las preguntas de los sueños; 6d motor en Python. Ejecución continua/programada y autodesarrollo siguen sin autorizar.
+
+**Criterio de salida 6a:** EXILIO propone una misión; tras aprobarla y lanzarla, el scout busca, descarga páginas por la puerta, guarda las fuentes con procedencia y propone hallazgos que el auditor aprueba o rechaza; ningún control del scout es modificable por el agente.
+
 ## Revisión entre fases
 
-Antes de iniciar cada fase posterior, revisar `FOUNDATION.md` y `ARCHITECTURE.md`, resolver las decisiones pendientes pertinentes, acotar el alcance y actualizar documentación. No se implementan bucles autónomos, navegación web, operación multiagente ni autodesarrollo como parte de este roadmap sin una decisión explícita futura. El motor onírico queda autorizado únicamente en la forma mínima descrita en la Fase 5.
+Antes de iniciar cada fase posterior, revisar `FOUNDATION.md` y `ARCHITECTURE.md`, resolver las decisiones pendientes pertinentes, acotar el alcance y actualizar documentación. No se implementan bucles autónomos, operación multiagente más allá de los scouts ni autodesarrollo como parte de este roadmap sin una decisión explícita futura. El motor onírico (Fase 5) y la investigación web de solo lectura (Fase 6) quedan autorizados únicamente en la forma mínima descrita en cada fase.

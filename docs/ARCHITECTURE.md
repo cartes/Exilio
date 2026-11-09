@@ -85,6 +85,17 @@ El contrato JSON de la indagación incluye `decision` (`investigate` | `decline`
 - Las recomendaciones de una investigación normal se muestran junto al checkpoint. Las respuestas libres del chat no se interpretan estructuradamente.
 - En este ciclo el modelo no tiene acceso a internet y el prompt le indica no afirmar que consultó fuentes.
 
+## Scouts de investigación web (Fase 6a)
+
+Investigación de **solo lectura** mediante misiones acotadas. La interfaz sigue hablando únicamente con la API local; solo el backend sale a la web, y únicamente a través de `WebGate`.
+- **Flujo:** `POST /api/agents/{agent}/research/propose` (EXILIO propone a partir de su mayor curiosidad C, sin IA) → `POST /api/research/scouts/{scout}/approve` → `.../run` (202; ejecuta tras la respuesta con reclamo atómico `approved → running`, una sola ejecución) → hallazgos `pending` → `POST /api/research/findings/{finding}/approve|reject`. El auditor también puede crear misiones propias (`POST /agents/{agent}/research/scouts`) y detener una en curso (`.../cancel`, comprobado antes de cada página).
+- **Buscador:** `SearchProvider` (`SearxngSearchProvider`, SearXNG autoalojado en `docker-compose.yml`, solo en 127.0.0.1, formato json habilitado en `infrastructure/searxng/settings.yml`). Si no responde, la misión termina `failed` con el motivo.
+- **`WebGate` (`app/Services/Research/WebGate.php`, controles en `config/research.php`):** http/https en puertos 80/443, sin credenciales; anti-SSRF (IPs privadas, loopback, link-local, CGNAT y reservadas; IPv4 mapeada en IPv6) con la IP validada fijada vía cURL y revalidación en cada redirección manual (máx. 3); dominios bloqueados; `robots.txt` (conservador si es inaccesible); tipos de contenido permitidos; tiempo total 10 s; descarga cortada a >3× `max_bytes` y texto truncado a `max_bytes`; interruptor `RESEARCH_ENABLED`. Topes duros por misión (8 páginas, 2 por dominio) que ni la carta ni el agente pueden superar.
+- **Extracción determinista** (`ContentExtractor`): texto limpio, título y frases relevantes por coincidencia de términos. El HTML es dato no confiable: no se ejecuta ni se interpreta como instrucción.
+- **Datos:** `research_scouts`, `source_documents` (URL, título, hash, texto, fecha) y `research_findings` (extracto, relevancia, estado, `memory_id`).
+- **Epistemología:** aprobar un hallazgo crea una memoria `episodic` + `fact`, `origin: system_event`, con `evidence_ref` = URL y `metadata` (scout, documento, hash, fecha). Significa «la fuente afirma X», no que X sea cierto. No cambia la versión ni los intereses. No consume presupuesto de IA en 6a.
+- **Pendiente:** 6b síntesis con modelo bajo la compuerta de US$5/mes; 6c varios scouts y misiones desde sueños; 6d motor en Python.
+
 ## Motor onírico mínimo (Fase 5)
 
 `DreamService` (`backend/app/Services/DreamService.php`) genera simulaciones internas bajo demanda a partir de memorias vigentes `fact`/`hypothesis`:
@@ -102,4 +113,4 @@ PostgreSQL 16 es la base de datos inicial. Compose usa imagen compatible con pgv
 
 ## Controles
 
-Las claves se inyectan desde el entorno. El objetivo presupuestario es US$5/mes, pero su aplicación efectiva requiere telemetría y una puerta de gasto antes de habilitar proveedores reales. No se ejecuta código generado ni se permite a agentes mutar políticas, permisos o controles. No se implementan navegación web, autodesarrollo o procesos cognitivos continuos; el motor onírico existe solo en su forma mínima bajo demanda (Fase 5).
+Las claves se inyectan desde el entorno. El objetivo presupuestario es US$5/mes, pero su aplicación efectiva requiere telemetría y una puerta de gasto antes de habilitar proveedores reales. No se ejecuta código generado ni se permite a agentes mutar políticas, permisos o controles. No se implementan autodesarrollo ni procesos cognitivos continuos. El motor onírico (Fase 5) y la investigación web de solo lectura (Fase 6a, vía `WebGate`) existen únicamente bajo demanda y con aprobación del auditor.

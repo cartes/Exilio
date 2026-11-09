@@ -115,4 +115,9 @@ class Agent extends Model
     {
         return $this->hasMany(AgentChatMessage::class);
     }
+
+    public function researchScouts(): HasMany
+    {
+        return $this->hasMany(ResearchScout::class);
+    }
 }

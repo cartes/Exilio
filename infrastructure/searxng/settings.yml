@@ -1,0 +1,13 @@
+# Configuración local de SearXNG para los scouts de Proyecto Exilio (Fase 6).
+# Solo escucha en 127.0.0.1 (ver docker-compose.yml). La clave secreta llega por SEARXNG_SECRET.
+use_default_settings: true
+
+server:
+  limiter: false          # instancia privada de un solo usuario
+  public_instance: false
+  image_proxy: false
+
+search:
+  formats:
+    - html
+    - json                # imprescindible: el backend consulta /search?format=json

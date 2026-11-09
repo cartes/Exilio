@@ -6,6 +6,7 @@ use App\Http\Controllers\AgentController;
 use App\Http\Controllers\AgentDreamController;
 use App\Http\Controllers\AgentExplorationController;
 use App\Http\Controllers\AgentLearningController;
+use App\Http\Controllers\AgentResearchController;
 use App\Http\Controllers\MemoryController;
 use Illuminate\Support\Facades\Route;
 
@@ -33,3 +34,14 @@ Route::get('/agents/{agent}/tombstones', [MemoryController::class, 'tombstones']
 Route::get('/memories/{memory}', [MemoryController::class, 'show']);
 Route::post('/memories/{memory}/rectify', [MemoryController::class, 'rectify']);
 Route::delete('/memories/{memory}', [MemoryController::class, 'destroy']);
+
+Route::get('/agents/{agent}/research/scouts', [AgentResearchController::class, 'index']);
+Route::post('/agents/{agent}/research/scouts', [AgentResearchController::class, 'store']);
+Route::post('/agents/{agent}/research/propose', [AgentResearchController::class, 'propose']);
+Route::get('/research/scouts/{scout}', [AgentResearchController::class, 'show']);
+Route::post('/research/scouts/{scout}/approve', [AgentResearchController::class, 'approve']);
+Route::post('/research/scouts/{scout}/reject', [AgentResearchController::class, 'reject']);
+Route::post('/research/scouts/{scout}/run', [AgentResearchController::class, 'run']);
+Route::post('/research/scouts/{scout}/cancel', [AgentResearchController::class, 'cancel']);
+Route::post('/research/findings/{finding}/approve', [AgentResearchController::class, 'approveFinding']);
+Route::post('/research/findings/{finding}/reject', [AgentResearchController::class, 'rejectFinding']);

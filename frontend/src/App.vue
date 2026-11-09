@@ -4,6 +4,7 @@ import AgentOrb from './components/AgentOrb.vue'
 import MemoryConstellation from './components/MemoryConstellation.vue'
 import DreamPanel from './components/DreamPanel.vue'
 import ProviderGuidance from './components/ProviderGuidance.vue'
+import ResearchPanel from './components/ResearchPanel.vue'
 
 const agent = ref(null)
 const memories = ref([])
@@ -1029,6 +1030,14 @@ onMounted(async () => {
           </div>
         </div>
       </section>
+
+      <!-- Scouts de investigación web (Fase 6a) -->
+      <ResearchPanel
+        :agent-id="agent?.id || null"
+        @memories-changed="fetchMemories"
+        @error="(msg) => error = msg"
+        @success="flashSuccess"
+      />
 
       <!-- Datos técnicos de identidad y curiosidad (plegable) -->
       <details class="group rounded-2xl border border-violet-300/10 bg-slate-950/30 backdrop-blur px-5 py-3 open:pb-5">
