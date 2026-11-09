@@ -70,6 +70,7 @@ class ClaudeService
                 'completion_tokens' => 0,
                 'total_tokens' => 0,
                 'estimated_cost_usd' => 0.0,
+                'mission_id' => $groundingData['mission_id'] ?? null,
                 'created_at' => now(),
             ]);
 
@@ -160,6 +161,7 @@ class ClaudeService
                 'completion_tokens' => $completionTokens,
                 'total_tokens' => $totalTokens,
                 'estimated_cost_usd' => $cost,
+                'mission_id' => $groundingData['mission_id'] ?? null,
                 'created_at' => now(),
             ]);
 

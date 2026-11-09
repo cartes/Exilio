@@ -108,7 +108,7 @@ INSTRUCTION;
                 'excerpt' => mb_substr($m->content, 0, 140),
             ])->values()->all(),
             // true cuando el sueño es la recombinación local y no una generación del modelo
-            'is_fallback' => $usedFallback || ($response['provider'] ?? '') !== 'gemini',
+            'is_fallback' => $usedFallback || !GeminiService::isRealProvider($response['provider'] ?? null),
             'telemetry' => [
                 'provider' => $response['provider'],
                 'model' => $response['model'],

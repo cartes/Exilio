@@ -69,6 +69,14 @@ La arquitectura integra Gemini mediante un patrón híbrido de introspección co
     - `POST /api/agents/{agent}/explore/persist`: Registra el hallazgo aprobado como memoria autobiográfica en `memories` (`origin: agent_inference`, `epistemic_status: hypothesis`) y actualiza la indagación guiada en el interés.
   - Interfaz: Botones de indagación en el panel de curiosidad y en el chat, con modal dedicado que muestra razonamiento, hipótesis y telemetría para su aprobación explícita por el auditor.
 
+## Integridad del aprendizaje autónomo (Fase 4)
+
+`POST /api/agents/{agent}/autonomous-step` aplica estas reglas:
+- **Un respaldo local no es aprendizaje:** si la respuesta no proviene de un proveedor real (`gemini`/`claude`: mock, error, fallo de parseo o presupuesto agotado), devuelve `checkpoint.status = fallback_skipped` y **no** persiste memoria ni incrementa la versión.
+- **Sin rasgos precargados:** este paso solo ajusta intereses (R ≤ 0.60 por hipótesis). Los rasgos de personalidad cambian únicamente con `POST /learn` y evidencia explícita. Un tema nuevo recibe R derivada de la confianza de la hipótesis, no de un valor fijo.
+- **Tema fijado por el agente:** el tema de la indagación no lo reescribe el modelo.
+- **Tope de misión verificable:** el cliente envía `mission_id` (UUID) y `mission_budget_usd`; el servidor calcula el gasto sumando `ai_usage_logs.mission_id`. `mission_spent_usd` ya no se acepta. Sin `mission_id` no se admite tope de misión. El límite mensual de US$5 sigue siendo la compuerta global.
+
 ## Motor onírico mínimo (Fase 5)
 
 `DreamService` (`backend/app/Services/DreamService.php`) genera simulaciones internas bajo demanda a partir de memorias vigentes `fact`/`hypothesis`:

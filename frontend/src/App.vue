@@ -70,8 +70,8 @@ const consecutiveZeroCostSteps = ref(0)
 
 // "Sal a investigar" Mission State (Topic + Budget Cap)
 const missionForm = ref({
-  topic: 'Formas prácticas y rentables de obtener dinero',
-  exploratory_query: '¿Qué negocios digitales, servicios con IA o fuentes de ingresos prácticos se pueden iniciar hoy con baja inversión?',
+  topic: '',
+  exploratory_query: '',
   budget_usd: 2.00,
   steps_per_batch: 3,
 })
@@ -112,6 +112,12 @@ const activeProviderLabel = computed(() => {
     return 'Gemini 2.5 Flash Lite'
   }
   return 'Introspección Local (Mock)'
+})
+
+const suggestedMissionInterests = computed(() => {
+  return [...interestsList.value]
+    .sort((a, b) => (b.curiosity_score || 0) - (a.curiosity_score || 0))
+    .slice(0, 4)
 })
 
 const activeMemories = computed(() => {
@@ -690,6 +696,7 @@ async function launchResearchMission() {
   const batchSteps = isAutoUntilBudget ? 999999 : Math.max(1, Math.min(10, parseInt(missionForm.value.steps_per_batch) || 3))
 
   activeMission.value = {
+    id: crypto.randomUUID(),
     topic,
     current_query: (missionForm.value.exploratory_query || '').trim() || null,
     budget_usd: budgetCap,
@@ -719,8 +726,9 @@ async function startAutonomousCycle(cyclesCount = 1) {
 
 async function startAutoUntilBudget() {
   if (!activeMission.value) {
-    const fallbackTopic = autonomousCheckpoint.value?.completed_step?.topic || topInterest.value?.topic || 'Formas prácticas y rentables de obtener dinero'
+    const fallbackTopic = autonomousCheckpoint.value?.completed_step?.topic || topInterest.value?.topic || 'Dinámica de Sistemas Complejos y Aprendizaje'
     activeMission.value = {
+      id: crypto.randomUUID(),
       topic: fallbackTopic,
       current_query: autonomousCheckpoint.value?.next_step_proposal?.proposed_query || null,
       budget_usd: Math.max(0.01, Math.min(5.00, parseFloat(missionForm.value.budget_usd) || 2.00)),
@@ -770,8 +778,8 @@ async function executeNextAutonomousStep() {
       body: JSON.stringify({
         topic: targetTopic,
         exploratory_query: targetQuery,
+        mission_id: activeMission.value?.id || undefined,
         mission_budget_usd: activeMission.value?.budget_usd || undefined,
-        mission_spent_usd: activeMission.value?.spent_usd || undefined,
       }),
     })
 
@@ -782,6 +790,18 @@ async function executeNextAutonomousStep() {
 
     const data = await res.json()
     const cp = data.checkpoint
+    if (cp.status === 'fallback_skipped') {
+      // Sin respuesta real del modelo: el backend no guardó nada ni cambió la versión.
+      autonomousRunning.value = false
+      autoUntilBudgetExhausted.value = false
+      autonomousCyclesRemaining.value = 0
+      if (cp.agent) agent.value = cp.agent
+      error.value = cp.checkpoint_message
+      setProcess('idle', 'En reposo (Idle) — Sin respuesta real del modelo', 'No se registró aprendizaje: la respuesta fue un respaldo local.')
+      await fetchAiUsage()
+      return
+    }
+
     autonomousCheckpoint.value = cp
 
     const stepCost = cp.completed_step?.cost_usd || 0
@@ -795,7 +815,8 @@ async function executeNextAutonomousStep() {
     }
 
     if (activeMission.value) {
-      activeMission.value.spent_usd += stepCost
+      // El gasto de la misión lo calcula el servidor; el cálculo local es solo respaldo
+      activeMission.value.spent_usd = cp.budget_telemetry?.mission_spent_usd ?? (activeMission.value.spent_usd + stepCost)
       activeMission.value.steps_completed++
       activeMission.value.current_query = cp.next_step_proposal?.proposed_query || null
       activeMission.value.findings.unshift({
@@ -1248,10 +1269,10 @@ onMounted(async () => {
               <span v-else>⚡</span>
               <span>Indagar tema actual ({{ topInterest?.topic || 'C=' + (topInterest?.curiosity_score || 0.43) }})</span>
             </button>
-            <button type="button" @click="sendChat('¿Qué formas prácticas y accesibles de obtener dinero podemos explorar hoy (sin cosas muy técnicas)?')"
+            <button type="button" @click="sendChat('¿Qué es lo que más curiosidad te genera ahora mismo y por qué?')"
               :disabled="sendingChat"
               class="px-2.5 py-1 rounded-full text-xs bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-700/80 transition disabled:opacity-50">
-              💡 ¿Qué otras formas prácticas de obtener dinero podemos explorar?
+              💡 ¿Qué te genera más curiosidad ahora?
             </button>
             <button type="button" @click="sendChat('Explícame en palabras simples qué temas estás investigando ahora y qué ideas nuevas propones.')"
               :disabled="sendingChat"
@@ -2821,29 +2842,21 @@ onMounted(async () => {
 
         <!-- Presets rápidos de temas -->
         <div class="space-y-1.5">
-          <span class="text-[11px] font-mono text-slate-400 block">Sugerencias rápidas (clic para rellenar):</span>
+          <span class="text-[11px] font-mono text-slate-400 block">Tus mayores curiosidades (clic para rellenar):</span>
           <div class="flex flex-wrap gap-1.5">
             <button
+              v-for="item in suggestedMissionInterests"
+              :key="item.topic"
               type="button"
-              @click="applyMissionPreset('Formas prácticas y rentables de obtener dinero', '¿Qué negocios digitales, servicios con IA o fuentes de ingresos prácticos se pueden iniciar hoy con baja inversión?')"
-              class="px-2.5 py-1 rounded-lg text-[11px] font-mono bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-800 transition"
+              @click="applyMissionPreset(item.topic, item.exploratory_query || '')"
+              class="px-2.5 py-1 rounded-lg text-[11px] font-mono bg-violet-950/60 hover:bg-violet-900/70 text-violet-200 border border-violet-800/60 transition"
+              :title="`C=${Number(item.curiosity_score || 0).toFixed(2)}`"
             >
-              💰 Otras formas de obtener dinero
+              {{ item.topic }}
             </button>
-            <button
-              type="button"
-              @click="applyMissionPreset('Servicios y Automatización con IA', '¿Qué servicios prácticos basados en Inteligencia Artificial demandan hoy las empresas y profesionales?')"
-              class="px-2.5 py-1 rounded-lg text-[11px] font-mono bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 border border-cyan-800 transition"
-            >
-              🤖 Negocios con IA
-            </button>
-            <button
-              type="button"
-              @click="applyMissionPreset('Oportunidades económicas en Latinoamérica', '¿Qué sectores y tendencias económicas están creciendo con más fuerza en Latinoamérica actualmente?')"
-              class="px-2.5 py-1 rounded-lg text-[11px] font-mono bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 border border-indigo-800 transition"
-            >
-              🌎 Economía en Latinoamérica
-            </button>
+            <span v-if="suggestedMissionInterests.length === 0" class="text-[11px] text-slate-500">
+              Aún no hay intereses propios. Escribe un tema o deja que un sueño siembre uno.
+            </span>
           </div>
         </div>
 
@@ -2857,7 +2870,7 @@ onMounted(async () => {
             type="text"
             v-model="missionForm.topic"
             required
-            placeholder="Ej: Formas prácticas y rentables de obtener dinero"
+            placeholder="Ej: Cómo se organizan los sistemas complejos"
             class="w-full text-xs px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-slate-100 focus:border-emerald-500 outline-none"
           />
         </div>

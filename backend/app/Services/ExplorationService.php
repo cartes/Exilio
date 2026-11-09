@@ -18,7 +18,7 @@ class ExplorationService
      *
      * @return array<string, mixed>
      */
-    public function runInquiry(Agent $agent, ?string $requestedTopic = null, ?string $customQuery = null): array
+    public function runInquiry(Agent $agent, ?string $requestedTopic = null, ?string $customQuery = null, ?string $missionId = null): array
     {
         // 1. Select topic: requested topic (existing or new), or interest with highest curiosity score C, or fallback
         $attributes = $agent->attributes ?? [];
@@ -46,7 +46,7 @@ class ExplorationService
                     'curiosity_score' => 0.71,
                     'consolidation_status' => 'tentative',
                     'source_epistemic_status' => 'hypothesis',
-                    'exploratory_query' => $cleanCustomQuery ?: "¿Cuáles son las estrategias, oportunidades y opciones más prácticas y reales sobre: {$cleanRequestedTopic}?",
+                    'exploratory_query' => $cleanCustomQuery ?: "¿Qué se sabe con certeza, qué es incierto y qué merece investigarse sobre: {$cleanRequestedTopic}?",
                     'evidence_memory_ids' => [],
                     'updated_at' => now()->toIso8601String(),
                 ];
@@ -85,7 +85,7 @@ Pregunta activa que guía esta búsqueda: "{$exploratoryQuery}".
 INSTRUCCIONES DE ESTILO Y CLARIDAD (MUY IMPORTANTE):
 - Usa un lenguaje CLARO, PRÁCTICO, SENCILLO y FÁCIL DE ENTENDER para cualquier persona.
 - PROHIBIDO usar jerga hiper-técnica o siglas oscuras (como especificaciones de hardware ASIC, J/TH, ni códigos de base de datos).
-- Si el tema es sobre "Obtener dinero" o similares, explora alternativas variadas, reales y aplicables (como servicios digitales, creación de productos, automatización con IA, comercio electrónico, inversiones diversificadas, educación financiera, etc.), evitando quedarte atrapado en criptominería.
+- Sigue la curiosidad del tema y la pregunta activa; no te desvíes hacia aplicaciones comerciales salvo que el tema las pida.
 
 INSTRUCCIONES DE FORMATO:
 Debes responder ESTRICTAMENTE en formato JSON plano (sin bloques markdown de código ```json ... ```) con la siguiente estructura:
@@ -113,10 +113,10 @@ INSTRUCTION;
             'topic' => $topic,
             'curiosity_score' => $curiosityScore,
             'deliberation' => "Analizando alternativas prácticas y accesibles sobre '{$topic}' a partir de la consulta: {$exploratoryQuery}.",
-            'hypothesis_content' => "Sobre '{$topic}': La estrategia más efectiva con baja inversión inicial consiste en combinar herramientas digitales automatizadas con servicios o productos de entrega directa en línea.",
+            'hypothesis_content' => "Sobre '{$topic}': Aún no hay evidencia propia suficiente; lo razonable es descomponer el tema en preguntas verificables antes de afirmar nada.",
             'confidence' => 0.65,
             'taxonomic_type' => 'semantic',
-            'next_exploratory_question' => "¿Qué modelos específicos dentro de '{$topic}' permiten generar los primeros resultados en menos de 30 días con mínimo esfuerzo operativo?",
+            'next_exploratory_question' => "¿Qué aspecto de '{$topic}' puede verificarse primero con una fuente observable?",
         ], JSON_UNESCAPED_UNICODE);
 
         // 3. Call Gemini
@@ -129,6 +129,7 @@ INSTRUCTION;
                 'topic' => $topic,
                 'curiosity_score' => $curiosityScore,
                 'exploratory_query' => $exploratoryQuery,
+                'mission_id' => $missionId,
             ]
         );
 
@@ -140,14 +141,17 @@ INSTRUCTION;
         }
 
         $parsed = json_decode($jsonStr, true);
+        $parseFailed = false;
 
         if (!$parsed || !isset($parsed['hypothesis_content'])) {
+            $parseFailed = true;
             Log::warning('ExplorationService: Fallback JSON parsing used', ['raw' => $rawContent]);
             $parsed = json_decode($fallbackJson, true);
         }
 
         return [
-            'topic' => $parsed['topic'] ?? $topic,
+            // El tema lo fija el agente/auditor, no el modelo: evita enlazar evidencia a un interés renombrado.
+            'topic' => $topic,
             'curiosity_score' => (float) ($parsed['curiosity_score'] ?? $curiosityScore),
             'exploratory_query' => $exploratoryQuery,
             'deliberation' => $parsed['deliberation'] ?? 'Deliberación cognitiva completada.',
@@ -157,6 +161,8 @@ INSTRUCTION;
                 ? $parsed['taxonomic_type']
                 : 'semantic',
             'next_exploratory_question' => $parsed['next_exploratory_question'] ?? "¿Cómo evoluciona {$topic}?",
+            // true cuando la hipótesis es el texto local enlatado y no una generación real del modelo
+            'is_fallback' => $parseFailed || !GeminiService::isRealProvider($geminiResponse['provider'] ?? null),
             'telemetry' => [
                 'provider' => $geminiResponse['provider'],
                 'model' => $geminiResponse['model'],

@@ -20,6 +20,7 @@ class AiUsageLog extends Model
         'completion_tokens',
         'total_tokens',
         'estimated_cost_usd',
+        'mission_id',
         'created_at',
     ];
 

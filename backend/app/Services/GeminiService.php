@@ -16,6 +16,15 @@ class GeminiService
     public const COMPLETION_TOKEN_COST_USD = 0.00000030;
 
     /**
+     * Indica si la etiqueta de proveedor corresponde a una generación real del modelo
+     * (y no al generador local, al fallback por error o a la compuerta presupuestaria).
+     */
+    public static function isRealProvider(?string $provider): bool
+    {
+        return in_array($provider, ['gemini', 'claude'], true);
+    }
+
+    /**
      * Generate grounded conversational response enforcing budget policy and telemetry.
      *
      * @param  array<string, mixed>  $groundingData
@@ -81,6 +90,7 @@ class GeminiService
                 'completion_tokens' => 0,
                 'total_tokens' => 0,
                 'estimated_cost_usd' => 0.0,
+                'mission_id' => $groundingData['mission_id'] ?? null,
                 'created_at' => now(),
             ]);
 
@@ -171,6 +181,7 @@ class GeminiService
                 'completion_tokens' => $completionTokens,
                 'total_tokens' => $totalTokens,
                 'estimated_cost_usd' => $cost,
+                'mission_id' => $groundingData['mission_id'] ?? null,
                 'created_at' => now(),
             ]);
 

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Agent;
+use App\Http\Controllers\AgentLearningController;
 use App\Models\AgentLearningVersion;
 use App\Models\AiUsageLog;
 use Illuminate\Support\Facades\DB;
@@ -33,67 +34,51 @@ class AutonomousLearningService
             throw new \RuntimeException("Límite presupuestario mensual alcanzado (US\${$monthlyBudget}/mes). Operación detenida por seguridad.");
         }
 
-        // Enforce mission budget cap if specified by the user (e.g., $2.00 USD in "Sal a investigar")
+        // Tope de misión verificable: el gasto se calcula en el servidor a partir de ai_usage_logs
+        // (por mission_id); el valor que envíe el cliente no se usa.
         $missionBudget = isset($options['mission_budget_usd']) ? (float) $options['mission_budget_usd'] : null;
-        $missionSpentBefore = isset($options['mission_spent_usd']) ? (float) $options['mission_spent_usd'] : 0.0;
+        $missionId = $options['mission_id'] ?? null;
+        $missionSpent = fn (): float => $missionId
+            ? (float) AiUsageLog::where('agent_id', $agent->id)->where('mission_id', $missionId)->sum('estimated_cost_usd')
+            : 0.0;
 
-        if ($missionBudget !== null && $missionSpentBefore >= $missionBudget) {
+        if ($missionBudget !== null && $missionSpent() >= $missionBudget) {
             throw new \RuntimeException("Tope de presupuesto de la misión alcanzado (US\$" . number_format($missionBudget, 2) . "). Investigación completada dentro de tu límite.");
         }
 
-        // 1. Run Cognitive Exploration / Inquiry using Gemini
+        // 1. Run Cognitive Exploration / Inquiry using the configured real provider
         $inquiry = $this->explorationService->runInquiry(
             $agent,
             $options['topic'] ?? null,
-            $options['exploratory_query'] ?? null
+            $options['exploratory_query'] ?? null,
+            $missionId
         );
+
+        // 1b. Una hipótesis enlatada (mock, error, presupuesto) NO es investigación:
+        // no se persiste ni hace evolucionar al agente.
+        if ($inquiry['is_fallback']) {
+            return $this->skippedFallbackResult($agent, $inquiry, $monthlyBudget, $missionBudget, $missionSpent());
+        }
 
         // 2. Persist the generated hypothesis into memories table
         $persistResult = $this->explorationService->persistFinding($agent, $inquiry);
         $memory = $persistResult['memory'];
         $agent = $persistResult['agent'];
 
-        // 3. Perform versioned learning evolution in DB transaction
+        // 3. Evolución versionada. La personalidad NO se toca aquí: los rasgos solo cambian por
+        // aprendizaje explícito (/learn) con evidencia; este paso solo ajusta intereses.
         $versionResult = DB::transaction(function () use ($agent, $memory, $inquiry) {
-            $currentVersion = (int) $agent->personality_version;
-            $nextVersion = $currentVersion + 1;
+            $nextVersion = ((int) $agent->personality_version) + 1;
 
             $attributes = $agent->attributes ?? [];
-            $personality = $attributes['personality'] ?? [];
             $interests = $attributes['interests'] ?? [];
-
-            // A. Update personality trait based on hypothesis confidence (scaled tentatively)
-            $traitKey = 'curiosidad_analitica';
-            $existingTrait = $personality[$traitKey] ?? null;
-            $currentVal = (float) ($existingTrait['value'] ?? 0.50);
             $confidence = (float) $inquiry['confidence'];
-
-            // Slight evolutionary adjustment towards the inquiry confidence
-            $targetVal = round(($currentVal * 0.70) + ($confidence * 0.30), 2);
-            $targetVal = max(0.1, min(0.95, $targetVal));
-
-            $existingEv = $existingTrait['evidence_memory_ids'] ?? [];
-            if (!in_array($memory->id, $existingEv)) {
-                $existingEv[] = $memory->id;
-            }
-            $existingEv = array_slice($existingEv, -30);
-
-            $personality[$traitKey] = [
-                'key' => $traitKey,
-                'value' => $targetVal,
-                'evidence_memory_ids' => $existingEv,
-                'consolidation_status' => 'tentative', // Tentative because backed by hypothesis
-            ];
-
-            // B. Update interest relevance and curiosity score
             $topic = $inquiry['topic'];
+
             if (isset($interests[$topic])) {
                 $curRel = (float) ($interests[$topic]['acquired_relevance'] ?? 0.20);
-                // Cap relevance at 0.60 for hypotheses according to Phase 3 rules
-                $newRel = min(0.60, round($curRel + 0.05, 2));
-                $interests[$topic]['acquired_relevance'] = $newRel;
-
-                // Adjust curiosity signals
+                // Tope de relevancia por hipótesis (Fase 3): 0.60
+                $newRel = min(AgentLearningController::MAX_RELEVANCE_HYPOTHESIS, round($curRel + 0.05, 2));
                 $signals = $interests[$topic]['curiosity_signals'] ?? [
                     'novelty' => 0.5,
                     'uncertainty' => 0.5,
@@ -101,23 +86,35 @@ class AutonomousLearningService
                     'relevance' => $newRel,
                 ];
                 $signals['relevance'] = $newRel;
-                // Uncertainty slightly decreases as inquiry progresses
+                // La incertidumbre baja ligeramente a medida que avanza la indagación
                 $signals['uncertainty'] = max(0.2, round(($signals['uncertainty'] ?? 0.5) * 0.95, 2));
-
-                $interests[$topic]['curiosity_signals'] = $signals;
-                $interests[$topic]['curiosity_score'] = round(
-                    (0.30 * ($signals['novelty'] ?? 0.5)) +
-                    (0.25 * ($signals['uncertainty'] ?? 0.5)) +
-                    (0.30 * ($signals['learning'] ?? 0.6)) +
-                    (0.15 * $newRel),
-                    2
-                );
+            } else {
+                // Tema nuevo: relevancia derivada solo de la evidencia (regla de hipótesis de Fase 3)
+                $newRel = min(AgentLearningController::MAX_RELEVANCE_HYPOTHESIS, round(0.20 * $confidence, 4));
+                $signals = AgentLearningController::deriveCuriositySignals('hypothesis', $newRel, $confidence);
+                $interests[$topic] = [
+                    'topic' => $topic,
+                    'consolidation_status' => 'tentative',
+                    'source_epistemic_status' => 'hypothesis',
+                    'exploratory_query' => $inquiry['next_exploratory_question'] ?? null,
+                    'evidence_memory_ids' => [$memory->id],
+                ];
             }
 
-            $attributes['personality'] = $personality;
+            $interests[$topic]['acquired_relevance'] = $newRel;
+            $interests[$topic]['curiosity_signals'] = $signals;
+            $interests[$topic]['curiosity_score'] = round(
+                (0.30 * ($signals['novelty'] ?? 0.5)) +
+                (0.25 * ($signals['uncertainty'] ?? 0.5)) +
+                (0.30 * ($signals['learning'] ?? 0.6)) +
+                (0.15 * $newRel),
+                2
+            );
+
             $attributes['interests'] = $interests;
 
-            // C. Insert new snapshot in agent_learning_versions
+            AgentLearningController::ensureBaselineVersion($agent);
+
             $summary = "Aprendizaje autónomo supervisado sobre '{$topic}' (Hipótesis con " . round($confidence * 100) . "% certeza).";
 
             $learningVersion = AgentLearningVersion::create([
@@ -132,7 +129,6 @@ class AutonomousLearningService
                 'created_at' => now(),
             ]);
 
-            // D. Increment agent's version and save
             $agent->personality_version = $nextVersion;
             $agent->attributes = $attributes;
             $agent->save();
@@ -197,8 +193,38 @@ class AutonomousLearningService
                 'monthly_budget_usd' => $monthlyBudget,
                 'current_month_spend_usd' => round($freshSpend, 6),
                 'remaining_budget_usd' => round($remainingBudget, 6),
+                'mission_budget_usd' => $missionBudget,
+                'mission_spent_usd' => round($missionSpent(), 6),
             ],
             'checkpoint_message' => $checkpointMessage,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $inquiry
+     * @return array<string, mixed>
+     */
+    protected function skippedFallbackResult(Agent $agent, array $inquiry, float $monthlyBudget, ?float $missionBudget, float $missionSpent): array
+    {
+        $provider = $inquiry['telemetry']['provider'] ?? 'desconocido';
+        $spend = (float) AiUsageLog::where('agent_id', $agent->id)
+            ->where('created_at', '>=', now()->startOfMonth())
+            ->sum('estimated_cost_usd');
+
+        return [
+            'status' => 'fallback_skipped',
+            'agent' => $agent->fresh(),
+            'reason' => $provider,
+            'topic' => $inquiry['topic'],
+            'budget_telemetry' => [
+                'monthly_budget_usd' => $monthlyBudget,
+                'current_month_spend_usd' => round($spend, 6),
+                'remaining_budget_usd' => round(max(0.0, $monthlyBudget - $spend), 6),
+                'mission_budget_usd' => $missionBudget,
+                'mission_spent_usd' => round($missionSpent, 6),
+            ],
+            'checkpoint_message' => "No hubo una respuesta real del modelo (proveedor: {$provider}). "
+                . 'No se guardó ninguna hipótesis ni cambió la versión: un texto local de respaldo no cuenta como aprendizaje.',
         ];
     }
 }
