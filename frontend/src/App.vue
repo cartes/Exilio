@@ -49,6 +49,7 @@ const learnModal = useTemplateRef('learnModal')
 const versionsModal = useTemplateRef('versionsModal')
 const inquiryModal = useTemplateRef('inquiryModal')
 const autonomousModal = useTemplateRef('autonomousModal')
+const researchMissionModal = useTemplateRef('researchMissionModal')
 
 // Exploration Inquiry State (Fase 4 - Opción A)
 const exploringInquiry = ref(false)
@@ -61,6 +62,15 @@ const autonomousCyclesRemaining = ref(0)
 const autonomousCheckpoint = ref(null)
 const sessionCostAccumulated = ref(0.0)
 const sessionCyclesCount = ref(0)
+
+// "Sal a investigar" Mission State (Topic + Budget Cap)
+const missionForm = ref({
+  topic: 'Formas prácticas y rentables de obtener dinero',
+  exploratory_query: '¿Qué negocios digitales, servicios con IA o fuentes de ingresos prácticos se pueden iniciar hoy con baja inversión?',
+  budget_usd: 2.00,
+  steps_per_batch: 3,
+})
+const activeMission = ref(null)
 
 // Form states
 const learnForm = ref({
@@ -639,6 +649,43 @@ async function persistInquiryFinding() {
   }
 }
 
+function openResearchMissionModal(presetTopic = '', presetQuery = '') {
+  if (presetTopic) {
+    missionForm.value.topic = presetTopic
+    missionForm.value.exploratory_query = presetQuery || `¿Qué oportunidades, estrategias y soluciones prácticas existen hoy sobre ${presetTopic}?`
+  }
+  researchMissionModal.value?.showModal()
+}
+
+function applyMissionPreset(topic, query) {
+  missionForm.value.topic = topic
+  missionForm.value.exploratory_query = query
+}
+
+async function launchResearchMission() {
+  const topic = (missionForm.value.topic || '').trim()
+  if (!topic) {
+    error.value = 'Por favor ingresa un tema para salir a investigar.'
+    return
+  }
+
+  const budgetCap = Math.max(0.01, Math.min(5.00, parseFloat(missionForm.value.budget_usd) || 2.00))
+  const batchSteps = Math.max(1, Math.min(10, parseInt(missionForm.value.steps_per_batch) || 3))
+
+  activeMission.value = {
+    topic,
+    current_query: (missionForm.value.exploratory_query || '').trim() || null,
+    budget_usd: budgetCap,
+    spent_usd: 0.0,
+    steps_per_batch: batchSteps,
+    steps_completed: 0,
+    findings: [],
+  }
+
+  researchMissionModal.value?.close()
+  await startAutonomousCycle(batchSteps)
+}
+
 async function startAutonomousCycle(cyclesCount = 1) {
   autonomousCyclesRemaining.value = cyclesCount
   autonomousRunning.value = true
@@ -649,14 +696,34 @@ async function startAutonomousCycle(cyclesCount = 1) {
 async function executeNextAutonomousStep() {
   if (!agent.value || !autonomousRunning.value) return
   error.value = null
-  setProcess('running', 'Ejecutando Aprendizaje Autónomo', 'EXILIO-001 indaga, formula hipótesis y evoluciona su versión con Gemini...')
+
+  // Check active mission budget cap before calling backend
+  if (activeMission.value && activeMission.value.spent_usd >= activeMission.value.budget_usd) {
+    autonomousRunning.value = false
+    autonomousCyclesRemaining.value = 0
+    setProcess('idle', 'En reposo (Idle) — Tope de Misión Alcanzado', `Se alcanzó el tope asignado de $${activeMission.value.budget_usd.toFixed(2)} USD.`)
+    autonomousModal.value?.showModal()
+    return
+  }
+
+  const targetTopic = activeMission.value?.topic || autonomousCheckpoint.value?.next_step_proposal?.topic || undefined
+  const targetQuery = activeMission.value?.current_query || undefined
+
+  setProcess(
+    'running',
+    activeMission.value ? `Investigando: "${activeMission.value.topic}" (Paso ${activeMission.value.steps_completed + 1})` : 'Ejecutando Aprendizaje Autónomo',
+    'EXILIO-001 indaga en lenguaje práctico, formula hipótesis y evoluciona su versión...'
+  )
 
   try {
     const res = await fetch(`/api/agents/${agent.value.id}/autonomous-step`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify({
-        topic: autonomousCheckpoint.value?.next_step_proposal?.topic || undefined,
+        topic: targetTopic,
+        exploratory_query: targetQuery,
+        mission_budget_usd: activeMission.value?.budget_usd || undefined,
+        mission_spent_usd: activeMission.value?.spent_usd || undefined,
       }),
     })
 
@@ -669,8 +736,23 @@ async function executeNextAutonomousStep() {
     const cp = data.checkpoint
     autonomousCheckpoint.value = cp
 
+    const stepCost = cp.completed_step?.cost_usd || 0
     sessionCyclesCount.value++
-    sessionCostAccumulated.value += (cp.completed_step?.cost_usd || 0)
+    sessionCostAccumulated.value += stepCost
+
+    if (activeMission.value) {
+      activeMission.value.spent_usd += stepCost
+      activeMission.value.steps_completed++
+      activeMission.value.current_query = cp.next_step_proposal?.proposed_query || null
+      activeMission.value.findings.unshift({
+        step: activeMission.value.steps_completed,
+        version: cp.completed_step?.version_after,
+        deliberation: cp.completed_step?.deliberation,
+        hypothesis: cp.completed_step?.hypothesis_content,
+        confidence: cp.completed_step?.confidence,
+        cost_usd: stepCost,
+      })
+    }
 
     // Update active agent state and telemetry in UI
     agent.value = cp.agent
@@ -678,14 +760,16 @@ async function executeNextAutonomousStep() {
 
     autonomousCyclesRemaining.value--
 
-    // If batch cycles remain, continue automatically; otherwise, pause at checkpoint and prompt user!
-    if (autonomousCyclesRemaining.value > 0) {
+    // Check if mission budget was reached or if batch cycles remain
+    const missionBudgetReached = activeMission.value && activeMission.value.spent_usd >= activeMission.value.budget_usd
+
+    if (!missionBudgetReached && autonomousCyclesRemaining.value > 0) {
       setTimeout(() => {
         executeNextAutonomousStep()
       }, 1500)
     } else {
       autonomousRunning.value = false
-      setProcess('idle', 'En reposo (Idle) — Checkpoint de Autonomía', 'Esperando autorización del auditor para continuar.')
+      setProcess('idle', 'En reposo (Idle) — Checkpoint de Investigación', 'Esperando revisión de hallazgos y autorización del auditor.')
       autonomousModal.value?.showModal()
     }
   } catch (err) {
@@ -699,7 +783,7 @@ function stopAutonomous() {
   autonomousRunning.value = false
   autonomousCyclesRemaining.value = 0
   autonomousModal.value?.close()
-  setProcess('idle', 'En reposo (Idle)', 'Aprendizaje autónomo pausado por el auditor.')
+  setProcess('idle', 'En reposo (Idle)', 'Investigación autónoma pausada por el auditor.')
 }
 
 onMounted(async () => {
@@ -1038,7 +1122,17 @@ onMounted(async () => {
         <div class="rounded-xl bg-slate-900 border border-slate-800 overflow-hidden flex flex-col">
           <!-- Quick Prompt Chips -->
           <div class="p-3 bg-slate-950/80 border-b border-slate-800 flex flex-wrap items-center gap-2">
-            <span class="text-[11px] font-mono text-slate-400 mr-1">Preguntas sugeridas:</span>
+            <span class="text-[11px] font-mono text-slate-400 mr-1">Acciones & Preguntas:</span>
+            <button
+              type="button"
+              @click="openResearchMissionModal()"
+              :disabled="autonomousRunning"
+              class="px-3 py-1 rounded-full text-xs bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/50 transition disabled:opacity-50 font-bold flex items-center gap-1.5 shadow-sm"
+              title="Proponer un tema y un tope de presupuesto (ej. $2 USD) para que EXILIO-001 salga a investigar"
+            >
+              <span>🚀</span>
+              <span>Sal a investigar (Tema + Presupuesto)</span>
+            </button>
             <button
               type="button"
               @click="runInquiryCycle()"
@@ -1048,7 +1142,7 @@ onMounted(async () => {
             >
               <span v-if="exploringInquiry" class="animate-spin">◐</span>
               <span v-else>⚡</span>
-              <span>Indagar sobre tema de mayor curiosidad ({{ topInterest?.topic || 'C=' + (topInterest?.curiosity_score || 0.43) }})</span>
+              <span>Indagar tema actual ({{ topInterest?.topic || 'C=' + (topInterest?.curiosity_score || 0.43) }})</span>
             </button>
             <button type="button" @click="sendChat('¿Qué formas prácticas y accesibles de obtener dinero podemos explorar hoy (sin cosas muy técnicas)?')"
               :disabled="sendingChat"
@@ -1451,12 +1545,23 @@ onMounted(async () => {
             <button
               v-if="!autonomousRunning"
               type="button"
+              @click="openResearchMissionModal()"
+              class="px-4 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md transition flex items-center gap-1.5 font-mono ring-1 ring-emerald-400/40"
+              title="Proponer un tema específico y un tope de presupuesto en dólares para que EXILIO-001 salga a investigar"
+            >
+              <span>🚀</span>
+              <span>Sal a investigar (Tema + Presupuesto)</span>
+            </button>
+
+            <button
+              v-if="!autonomousRunning"
+              type="button"
               @click="startAutonomousCycle(1)"
               class="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white shadow-sm transition flex items-center gap-1.5 font-mono"
               title="Ejecutar 1 paso de aprendizaje autónomo y detenerse en el checkpoint"
             >
               <span>▶</span>
-              <span>Ejecutar 1 Paso Autónomo (~$0.00018 USD)</span>
+              <span>Ejecutar 1 Paso (~$0.00018 USD)</span>
             </button>
 
             <button
@@ -1479,6 +1584,48 @@ onMounted(async () => {
               <span>⏹</span>
               <span>Detener Autonomía</span>
             </button>
+          </div>
+        </div>
+
+        <!-- Panel de Misión Activa ("Sal a investigar") si existe una misión en curso o completada -->
+        <div
+          v-if="activeMission"
+          class="bg-emerald-950/20 border border-emerald-800/80 rounded-xl p-4 text-xs space-y-3"
+        >
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <span class="text-base">🚀</span>
+              <span class="font-mono font-bold text-emerald-300 uppercase">
+                Misión de Investigación: "{{ activeMission.topic }}"
+              </span>
+            </div>
+            <div class="flex items-center gap-3 font-mono text-xs">
+              <span class="px-2.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-200">
+                Pasos completados: <strong>{{ activeMission.steps_completed }}</strong>
+              </span>
+              <span class="px-2.5 py-0.5 rounded bg-emerald-950 border border-emerald-700 text-emerald-300">
+                Gastado en misión: <strong>${{ Number(activeMission.spent_usd).toFixed(5) }} / ${{ Number(activeMission.budget_usd).toFixed(2) }} USD</strong>
+              </span>
+            </div>
+          </div>
+
+          <div v-if="activeMission.findings.length > 0" class="space-y-2 pt-2 border-t border-emerald-900/50">
+            <span class="text-[11px] font-mono text-emerald-200 font-semibold block">
+              Hallazgos e ideas descubiertas en esta misión ({{ activeMission.findings.length }}):
+            </span>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-60 overflow-y-auto pr-1">
+              <div
+                v-for="f in activeMission.findings"
+                :key="f.step"
+                class="p-3 rounded-lg bg-slate-950/90 border border-slate-800 space-y-1"
+              >
+                <div class="flex items-center justify-between text-[10px] font-mono text-slate-400">
+                  <span class="text-emerald-400 font-bold">Paso #{{ f.step }} (v{{ f.version }}.0)</span>
+                  <span>Certeza: {{ (f.confidence * 100).toFixed(0) }}% | ${{ Number(f.cost_usd).toFixed(5) }}</span>
+                </div>
+                <p class="text-slate-100 font-sans text-xs leading-relaxed">{{ f.hypothesis }}</p>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -2458,9 +2605,16 @@ onMounted(async () => {
               <span class="text-slate-500 block text-[9px] mt-0.5">de ${{ Number(autonomousCheckpoint.budget_telemetry?.monthly_budget_usd || 5).toFixed(2) }} USD</span>
             </div>
             <div class="p-2 rounded bg-slate-900 border border-slate-800">
-              <span class="text-slate-500 block text-[10px]">Presupuesto restante:</span>
-              <span class="text-purple-300 font-bold text-xs">${{ Number(autonomousCheckpoint.budget_telemetry?.remaining_budget_usd || 5).toFixed(4) }} USD</span>
-              <span class="text-slate-500 block text-[9px] mt-0.5">Compuerta activa</span>
+              <span class="text-slate-500 block text-[10px]">Presupuesto Misión / Restante:</span>
+              <span v-if="activeMission" class="text-emerald-300 font-bold text-xs">
+                ${{ Number(activeMission.spent_usd).toFixed(5) }} / ${{ Number(activeMission.budget_usd).toFixed(2) }} USD
+              </span>
+              <span v-else class="text-purple-300 font-bold text-xs">
+                ${{ Number(autonomousCheckpoint.budget_telemetry?.remaining_budget_usd || 5).toFixed(4) }} USD
+              </span>
+              <span class="text-slate-500 block text-[9px] mt-0.5">
+                {{ activeMission ? `Tope misión: $${Number(activeMission.budget_usd).toFixed(2)} USD` : 'Compuerta activa' }}
+              </span>
             </div>
           </div>
         </div>
@@ -2480,13 +2634,22 @@ onMounted(async () => {
 
         <!-- Botones de Acción (Human-in-the-Loop decision) -->
         <div class="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-800">
-          <button
-            type="button"
-            @click="stopAutonomous"
-            class="w-full sm:w-auto px-4 py-2 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
-          >
-            ⏸ Pausar y pasar a Reposo (Idle)
-          </button>
+          <div class="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              type="button"
+              @click="stopAutonomous"
+              class="flex-1 sm:flex-initial px-3.5 py-2 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+            >
+              ⏸ Pausar (Idle)
+            </button>
+            <button
+              type="button"
+              @click="autonomousModal?.close(); openResearchMissionModal()"
+              class="flex-1 sm:flex-initial px-3.5 py-2 rounded-lg text-xs font-mono bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border border-emerald-700 transition"
+            >
+              🚀 Cambiar Tema / Tope
+            </button>
+          </div>
 
           <div class="flex flex-wrap items-center gap-2.5 w-full sm:w-auto justify-end">
             <button
@@ -2508,6 +2671,166 @@ onMounted(async () => {
           </div>
         </div>
       </div>
+    </dialog>
+
+    <!-- Modal: "Sal a investigar" (Proponer Tema + Tope de Presupuesto en Dólares) -->
+    <dialog
+      ref="researchMissionModal"
+      closedby="any"
+      aria-labelledby="researchMissionModalTitle"
+      @click="handleDialogClickFallback($event, researchMissionModal)"
+      class="fixed inset-0 m-auto max-h-[90vh] overflow-y-auto rounded-2xl bg-slate-900 border border-emerald-700/80 text-slate-100 p-6 max-w-xl w-[calc(100%-2rem)] shadow-2xl backdrop:bg-slate-950/80 outline-none"
+    >
+      <form @submit.prevent="launchResearchMission" class="space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div class="flex items-center gap-2">
+            <span class="text-lg">🚀</span>
+            <h3 id="researchMissionModalTitle" class="text-base font-bold text-white font-mono">
+              Sal a Investigar: Tema & Tope de Presupuesto
+            </h3>
+          </div>
+          <button type="button" @click="researchMissionModal?.close()" class="text-slate-400 hover:text-white text-lg">✕</button>
+        </div>
+
+        <!-- Función & Ejemplo: Sal a investigar -->
+        <div class="p-3.5 rounded-lg bg-slate-950/90 border border-emerald-900/60 text-xs space-y-1.5">
+          <span class="text-[10px] font-mono font-bold text-emerald-400 uppercase block">¿Cómo funciona "Sal a investigar"?</span>
+          <p class="text-slate-300 text-[11px] leading-relaxed">
+            Le asignas a EXILIO-001 una misión de investigación en lenguaje sencillo y un <strong>tope máximo de presupuesto en dólares</strong> (por ejemplo, <code class="text-emerald-300 font-mono">US$2.00</code>). El agente saldrá a indagar paso a paso, guardando sus descubrimientos y deteniéndose en cada tanda para mostrarte ideas claras y cuánto presupuesto ha consumido.
+          </p>
+        </div>
+
+        <!-- Presets rápidos de temas -->
+        <div class="space-y-1.5">
+          <span class="text-[11px] font-mono text-slate-400 block">Sugerencias rápidas (clic para rellenar):</span>
+          <div class="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              @click="applyMissionPreset('Formas prácticas y rentables de obtener dinero', '¿Qué negocios digitales, servicios con IA o fuentes de ingresos prácticos se pueden iniciar hoy con baja inversión?')"
+              class="px-2.5 py-1 rounded-lg text-[11px] font-mono bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-800 transition"
+            >
+              💰 Otras formas de obtener dinero
+            </button>
+            <button
+              type="button"
+              @click="applyMissionPreset('Servicios y Automatización con IA', '¿Qué servicios prácticos basados en Inteligencia Artificial demandan hoy las empresas y profesionales?')"
+              class="px-2.5 py-1 rounded-lg text-[11px] font-mono bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 border border-cyan-800 transition"
+            >
+              🤖 Negocios con IA
+            </button>
+            <button
+              type="button"
+              @click="applyMissionPreset('Oportunidades económicas en Latinoamérica', '¿Qué sectores y tendencias económicas están creciendo con más fuerza en Latinoamérica actualmente?')"
+              class="px-2.5 py-1 rounded-lg text-[11px] font-mono bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 border border-indigo-800 transition"
+            >
+              🌎 Economía en Latinoamérica
+            </button>
+          </div>
+        </div>
+
+        <!-- Campo 1: Tema -->
+        <div class="space-y-1">
+          <label for="mission_topic_input" class="text-xs font-mono text-slate-300 block">
+            1. Tema que quieres que investigue:
+          </label>
+          <input
+            id="mission_topic_input"
+            type="text"
+            v-model="missionForm.topic"
+            required
+            placeholder="Ej: Formas prácticas y rentables de obtener dinero"
+            class="w-full text-xs px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-slate-100 focus:border-emerald-500 outline-none"
+          />
+        </div>
+
+        <!-- Campo 2: Pregunta o enfoque inicial -->
+        <div class="space-y-1">
+          <label for="mission_query_input" class="text-xs font-mono text-slate-300 block">
+            2. Pregunta o enfoque inicial (opcional):
+          </label>
+          <textarea
+            id="mission_query_input"
+            v-model="missionForm.exploratory_query"
+            rows="2"
+            placeholder="Ej: ¿Qué alternativas reales y accesibles existen hoy sin necesitar hardware costoso?"
+            class="w-full text-xs px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-slate-100 focus:border-emerald-500 outline-none"
+          ></textarea>
+        </div>
+
+        <!-- Campo 3 y 4: Presupuesto Máximo USD y Pasos por Tanda -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="space-y-1.5">
+            <label for="mission_budget_input" class="text-xs font-mono text-slate-300 block">
+              3. Tope de Presupuesto (USD):
+            </label>
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-mono font-bold text-emerald-400">US$</span>
+              <input
+                id="mission_budget_input"
+                type="number"
+                step="0.10"
+                min="0.05"
+                max="5.00"
+                v-model="missionForm.budget_usd"
+                required
+                class="w-full text-sm font-mono font-bold px-3 py-1.5 rounded-lg bg-slate-950 border border-emerald-700/80 text-emerald-300 focus:border-emerald-400 outline-none"
+              />
+            </div>
+            <div class="flex items-center gap-1.5 pt-1">
+              <button
+                v-for="amt in [0.50, 1.00, 2.00, 5.00]"
+                :key="amt"
+                type="button"
+                @click="missionForm.budget_usd = amt"
+                :class="[
+                  'px-2 py-0.5 rounded text-[10px] font-mono border transition',
+                  Number(missionForm.budget_usd) === amt
+                    ? 'bg-emerald-600 text-white border-emerald-500 font-bold'
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
+                ]"
+              >
+                ${{ amt.toFixed(2) }}
+              </button>
+            </div>
+          </div>
+
+          <div class="space-y-1.5">
+            <label for="mission_steps_select" class="text-xs font-mono text-slate-300 block">
+              4. Pasos antes de reportarte:
+            </label>
+            <select
+              id="mission_steps_select"
+              v-model="missionForm.steps_per_batch"
+              class="w-full text-xs font-mono px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-slate-200 focus:border-emerald-500 outline-none"
+            >
+              <option :value="1">Cada 1 paso (~$0.0002 USD)</option>
+              <option :value="3">Ráfaga de 3 pasos (~$0.0006 USD)</option>
+              <option :value="5">Ráfaga de 5 pasos (~$0.0010 USD)</option>
+              <option :value="10">Ráfaga de 10 pasos (~$0.0020 USD)</option>
+            </select>
+            <span class="text-[10px] font-mono text-slate-500 block">
+              Se detendrá al cumplir estos pasos o si alcanza tu tope de US${{ Number(missionForm.budget_usd || 2).toFixed(2) }}.
+            </span>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+          <button
+            type="button"
+            @click="researchMissionModal?.close()"
+            class="px-4 py-2 rounded-lg text-xs font-mono text-slate-400 hover:text-white"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            class="px-4 py-2 rounded-lg text-xs font-mono font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md transition flex items-center gap-1.5"
+          >
+            <span>🚀</span>
+            <span>Sal a investigar (Tope US${{ Number(missionForm.budget_usd || 2).toFixed(2) }})</span>
+          </button>
+        </div>
+      </form>
     </dialog>
   </div>
 </template>

@@ -20,6 +20,9 @@ class AgentAutonomousController
     ): JsonResponse {
         $validated = $request->validate([
             'topic' => ['nullable', 'string', 'max:255'],
+            'exploratory_query' => ['nullable', 'string', 'max:1000'],
+            'mission_budget_usd' => ['nullable', 'numeric', 'min:0.0001', 'max:5.00'],
+            'mission_spent_usd' => ['nullable', 'numeric', 'min:0'],
         ]);
 
         try {

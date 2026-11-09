@@ -33,8 +33,20 @@ class AutonomousLearningService
             throw new \RuntimeException("Límite presupuestario mensual alcanzado (US\${$monthlyBudget}/mes). Operación detenida por seguridad.");
         }
 
+        // Enforce mission budget cap if specified by the user (e.g., $2.00 USD in "Sal a investigar")
+        $missionBudget = isset($options['mission_budget_usd']) ? (float) $options['mission_budget_usd'] : null;
+        $missionSpentBefore = isset($options['mission_spent_usd']) ? (float) $options['mission_spent_usd'] : 0.0;
+
+        if ($missionBudget !== null && $missionSpentBefore >= $missionBudget) {
+            throw new \RuntimeException("Tope de presupuesto de la misión alcanzado (US\$" . number_format($missionBudget, 2) . "). Investigación completada dentro de tu límite.");
+        }
+
         // 1. Run Cognitive Exploration / Inquiry using Gemini
-        $inquiry = $this->explorationService->runInquiry($agent, $options['topic'] ?? null);
+        $inquiry = $this->explorationService->runInquiry(
+            $agent,
+            $options['topic'] ?? null,
+            $options['exploratory_query'] ?? null
+        );
 
         // 2. Persist the generated hypothesis into memories table
         $persistResult = $this->explorationService->persistFinding($agent, $inquiry);

@@ -102,5 +102,32 @@ class AgentAutonomousApiTest extends TestCase
             'operation_type' => 'learning',
         ]);
     }
+
+    public function test_can_run_research_mission_with_custom_topic_and_budget_cap(): void
+    {
+        $response = $this->postJson("/api/agents/{$this->agent->id}/autonomous-step", [
+            'topic' => 'Formas prácticas de obtener dinero',
+            'exploratory_query' => '¿Qué negocios digitales se pueden iniciar con baja inversión?',
+            'mission_budget_usd' => 2.00,
+            'mission_spent_usd' => 0.15,
+        ]);
+
+        $response->assertStatus(200);
+        $this->assertSame('Formas prácticas de obtener dinero', $response->json('checkpoint.completed_step.topic'));
+
+        // Verify new topic was registered in agent interests
+        $freshAgent = $this->agent->fresh();
+        $this->assertArrayHasKey('Formas prácticas de obtener dinero', $freshAgent->attributes['interests']);
+
+        // Verify mission budget cap stops execution when reached
+        $blockedResponse = $this->postJson("/api/agents/{$this->agent->id}/autonomous-step", [
+            'topic' => 'Formas prácticas de obtener dinero',
+            'mission_budget_usd' => 2.00,
+            'mission_spent_usd' => 2.00,
+        ]);
+
+        $blockedResponse->assertStatus(429)
+            ->assertJsonPath('status', 'budget_limit_exceeded');
+    }
 }
 

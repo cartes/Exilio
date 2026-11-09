@@ -14,18 +14,48 @@ class ExplorationService
     ) {}
 
     /**
-     * Run an on-demand cognitive inquiry cycle driven by the agent's highest curiosity score.
+     * Run an on-demand cognitive inquiry cycle driven by the agent's highest curiosity score or a user-proposed topic.
      *
      * @return array<string, mixed>
      */
-    public function runInquiry(Agent $agent, ?string $requestedTopic = null): array
+    public function runInquiry(Agent $agent, ?string $requestedTopic = null, ?string $customQuery = null): array
     {
-        // 1. Select topic: requested topic, or interest with highest curiosity score C, or fallback
-        $interests = $agent->attributes['interests'] ?? [];
+        // 1. Select topic: requested topic (existing or new), or interest with highest curiosity score C, or fallback
+        $attributes = $agent->attributes ?? [];
+        $interests = $attributes['interests'] ?? [];
         $selectedInterest = null;
+        $cleanRequestedTopic = $requestedTopic ? trim($requestedTopic) : null;
+        $cleanCustomQuery = $customQuery ? trim($customQuery) : null;
 
-        if ($requestedTopic && isset($interests[$requestedTopic])) {
-            $selectedInterest = $interests[$requestedTopic];
+        if ($cleanRequestedTopic) {
+            if (isset($interests[$cleanRequestedTopic])) {
+                $selectedInterest = $interests[$cleanRequestedTopic];
+                if ($cleanCustomQuery) {
+                    $selectedInterest['exploratory_query'] = $cleanCustomQuery;
+                    $interests[$cleanRequestedTopic]['exploratory_query'] = $cleanCustomQuery;
+                    $attributes['interests'] = $interests;
+                    $agent->attributes = $attributes;
+                    $agent->save();
+                }
+            } else {
+                // Register the new user-proposed topic into the curiosity radar
+                // C = 0.30*N(0.80) + 0.25*I(0.75) + 0.30*A(0.80) + 0.15*R(0.30) = 0.71
+                $newInterest = [
+                    'topic' => $cleanRequestedTopic,
+                    'acquired_relevance' => 0.30,
+                    'curiosity_score' => 0.71,
+                    'consolidation_status' => 'tentative',
+                    'source_epistemic_status' => 'hypothesis',
+                    'exploratory_query' => $cleanCustomQuery ?: "¿Cuáles son las estrategias, oportunidades y opciones más prácticas y reales sobre: {$cleanRequestedTopic}?",
+                    'evidence_memory_ids' => [],
+                    'updated_at' => now()->toIso8601String(),
+                ];
+                $interests[$cleanRequestedTopic] = $newInterest;
+                $attributes['interests'] = $interests;
+                $agent->attributes = $attributes;
+                $agent->save();
+                $selectedInterest = $newInterest;
+            }
         } elseif (!empty($interests)) {
             // Find interest with max curiosity_score
             $highestScore = -1.0;
@@ -39,7 +69,7 @@ class ExplorationService
         }
 
         $topic = $selectedInterest['topic'] ?? 'Dinámica de Sistemas Complejos y Aprendizaje';
-        $exploratoryQuery = $selectedInterest['exploratory_query'] ?? "¿Cuáles son los patrones observables en el tema: {$topic}?";
+        $exploratoryQuery = $cleanCustomQuery ?: ($selectedInterest['exploratory_query'] ?? "¿Cuáles son los patrones observables en el tema: {$topic}?");
         $curiosityScore = (float) ($selectedInterest['curiosity_score'] ?? 0.40);
 
         // 2. Build system instruction with ontological grounding
