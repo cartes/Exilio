@@ -62,6 +62,8 @@ const autonomousCyclesRemaining = ref(0)
 const autonomousCheckpoint = ref(null)
 const sessionCostAccumulated = ref(0.0)
 const sessionCyclesCount = ref(0)
+const autoUntilBudgetExhausted = ref(false)
+const consecutiveZeroCostSteps = ref(0)
 
 // "Sal a investigar" Mission State (Topic + Budget Cap)
 const missionForm = ref({
@@ -670,7 +672,8 @@ async function launchResearchMission() {
   }
 
   const budgetCap = Math.max(0.01, Math.min(5.00, parseFloat(missionForm.value.budget_usd) || 2.00))
-  const batchSteps = Math.max(1, Math.min(10, parseInt(missionForm.value.steps_per_batch) || 3))
+  const isAutoUntilBudget = missionForm.value.steps_per_batch === 'auto_budget'
+  const batchSteps = isAutoUntilBudget ? 999999 : Math.max(1, Math.min(10, parseInt(missionForm.value.steps_per_batch) || 3))
 
   activeMission.value = {
     topic,
@@ -683,11 +686,39 @@ async function launchResearchMission() {
   }
 
   researchMissionModal.value?.close()
-  await startAutonomousCycle(batchSteps)
+  if (isAutoUntilBudget) {
+    await startAutoUntilBudget()
+  } else {
+    autoUntilBudgetExhausted.value = false
+    await startAutonomousCycle(batchSteps)
+  }
 }
 
 async function startAutonomousCycle(cyclesCount = 1) {
+  autoUntilBudgetExhausted.value = false
+  consecutiveZeroCostSteps.value = 0
   autonomousCyclesRemaining.value = cyclesCount
+  autonomousRunning.value = true
+  autonomousModal.value?.close()
+  await executeNextAutonomousStep()
+}
+
+async function startAutoUntilBudget() {
+  if (!activeMission.value) {
+    const fallbackTopic = autonomousCheckpoint.value?.completed_step?.topic || topInterest.value?.topic || 'Formas prácticas y rentables de obtener dinero'
+    activeMission.value = {
+      topic: fallbackTopic,
+      current_query: autonomousCheckpoint.value?.next_step_proposal?.proposed_query || null,
+      budget_usd: Math.max(0.01, Math.min(5.00, parseFloat(missionForm.value.budget_usd) || 2.00)),
+      spent_usd: sessionCostAccumulated.value || 0.0,
+      steps_per_batch: 999999,
+      steps_completed: sessionCyclesCount.value || 0,
+      findings: [],
+    }
+  }
+  autoUntilBudgetExhausted.value = true
+  consecutiveZeroCostSteps.value = 0
+  autonomousCyclesRemaining.value = 999999
   autonomousRunning.value = true
   autonomousModal.value?.close()
   await executeNextAutonomousStep()
@@ -700,8 +731,9 @@ async function executeNextAutonomousStep() {
   // Check active mission budget cap before calling backend
   if (activeMission.value && activeMission.value.spent_usd >= activeMission.value.budget_usd) {
     autonomousRunning.value = false
+    autoUntilBudgetExhausted.value = false
     autonomousCyclesRemaining.value = 0
-    setProcess('idle', 'En reposo (Idle) — Tope de Misión Alcanzado', `Se alcanzó el tope asignado de $${activeMission.value.budget_usd.toFixed(2)} USD.`)
+    setProcess('idle', 'En reposo (Idle) — Tope de Misión Alcanzado', `Se completó el presupuesto asignado de $${activeMission.value.budget_usd.toFixed(2)} USD.`)
     autonomousModal.value?.showModal()
     return
   }
@@ -711,7 +743,9 @@ async function executeNextAutonomousStep() {
 
   setProcess(
     'running',
-    activeMission.value ? `Investigando: "${activeMission.value.topic}" (Paso ${activeMission.value.steps_completed + 1})` : 'Ejecutando Aprendizaje Autónomo',
+    activeMission.value
+      ? `${autoUntilBudgetExhausted.value ? '[AUTO] ' : ''}Investigando: "${activeMission.value.topic}" (Paso ${activeMission.value.steps_completed + 1} | $${Number(activeMission.value.spent_usd).toFixed(4)}/$${Number(activeMission.value.budget_usd).toFixed(2)})`
+      : 'Ejecutando Aprendizaje Autónomo',
     'EXILIO-001 indaga en lenguaje práctico, formula hipótesis y evoluciona su versión...'
   )
 
@@ -740,6 +774,12 @@ async function executeNextAutonomousStep() {
     sessionCyclesCount.value++
     sessionCostAccumulated.value += stepCost
 
+    if (stepCost === 0) {
+      consecutiveZeroCostSteps.value++
+    } else {
+      consecutiveZeroCostSteps.value = 0
+    }
+
     if (activeMission.value) {
       activeMission.value.spent_usd += stepCost
       activeMission.value.steps_completed++
@@ -760,27 +800,42 @@ async function executeNextAutonomousStep() {
 
     autonomousCyclesRemaining.value--
 
-    // Check if mission budget was reached or if batch cycles remain
-    const missionBudgetReached = activeMission.value && activeMission.value.spent_usd >= activeMission.value.budget_usd
+    // If Gemini API is rate-limiting 3 times in a row (0 cost), pause safely to avoid empty loops
+    if (autoUntilBudgetExhausted.value && consecutiveZeroCostSteps.value >= 3) {
+      autonomousRunning.value = false
+      autoUntilBudgetExhausted.value = false
+      error.value = 'Pausa preventiva: Gemini API aplicó límite temporal de velocidad (0 tokens cobrados en 3 intentos). Espera unos segundos y reanuda.'
+      setProcess('idle', 'En reposo (Idle) — Pausa por Rate Limit de API', 'Pausado para evitar ciclos sin respuesta de Gemini.')
+      autonomousModal.value?.showModal()
+      return
+    }
 
-    if (!missionBudgetReached && autonomousCyclesRemaining.value > 0) {
+    // Check if mission budget was reached or if batch cycles / auto-budget remain
+    const missionBudgetReached = activeMission.value && activeMission.value.spent_usd >= activeMission.value.budget_usd
+    const shouldContinue = !missionBudgetReached && (autoUntilBudgetExhausted.value || autonomousCyclesRemaining.value > 0)
+
+    if (shouldContinue) {
+      const delayMs = autoUntilBudgetExhausted.value ? 2500 : 1500
       setTimeout(() => {
         executeNextAutonomousStep()
-      }, 1500)
+      }, delayMs)
     } else {
       autonomousRunning.value = false
+      autoUntilBudgetExhausted.value = false
       setProcess('idle', 'En reposo (Idle) — Checkpoint de Investigación', 'Esperando revisión de hallazgos y autorización del auditor.')
       autonomousModal.value?.showModal()
     }
   } catch (err) {
     error.value = err.message
     autonomousRunning.value = false
+    autoUntilBudgetExhausted.value = false
     setProcess('idle', 'En reposo (Idle)', 'Ciclo autónomo detenido por error o límite.')
   }
 }
 
 function stopAutonomous() {
   autonomousRunning.value = false
+  autoUntilBudgetExhausted.value = false
   autonomousCyclesRemaining.value = 0
   autonomousModal.value?.close()
   setProcess('idle', 'En reposo (Idle)', 'Investigación autónoma pausada por el auditor.')
@@ -2633,41 +2688,56 @@ onMounted(async () => {
         </div>
 
         <!-- Botones de Acción (Human-in-the-Loop decision) -->
-        <div class="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-800">
-          <div class="flex items-center gap-2 w-full sm:w-auto">
-            <button
-              type="button"
-              @click="stopAutonomous"
-              class="flex-1 sm:flex-initial px-3.5 py-2 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
-            >
-              ⏸ Pausar (Idle)
-            </button>
-            <button
-              type="button"
-              @click="autonomousModal?.close(); openResearchMissionModal()"
-              class="flex-1 sm:flex-initial px-3.5 py-2 rounded-lg text-xs font-mono bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border border-emerald-700 transition"
-            >
-              🚀 Cambiar Tema / Tope
-            </button>
-          </div>
+        <div class="space-y-3 pt-3 border-t border-slate-800">
+          <!-- Botón Destacado: Modo Automático hasta terminar el Budget del Proceso -->
+          <button
+            type="button"
+            @click="startAutoUntilBudget"
+            class="w-full px-4 py-2.5 rounded-xl text-xs font-mono font-bold bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/50 transition shadow-md flex items-center justify-center gap-2"
+            title="Continuar iterando automáticamente sin preguntar en cada paso hasta consumir el presupuesto asignado a este proceso"
+          >
+            <span>🔄</span>
+            <span>
+              Modo Automático hasta terminar con budget de este proceso (${{ Number(activeMission?.budget_usd || missionForm?.budget_usd || 2.00).toFixed(2) }} USD)
+            </span>
+          </button>
 
-          <div class="flex flex-wrap items-center gap-2.5 w-full sm:w-auto justify-end">
-            <button
-              type="button"
-              @click="startAutonomousCycle(3)"
-              class="flex-1 sm:flex-initial px-3.5 py-2 rounded-lg text-xs font-mono font-semibold bg-purple-950/90 hover:bg-purple-900 text-purple-200 border border-purple-700 transition shadow-sm"
-              title="Ejecutar 3 pasos automáticos antes de volver a preguntar"
-            >
-              ⏩ Ráfaga de 3 pasos (~$0.0006 USD)
-            </button>
-            <button
-              type="button"
-              @click="startAutonomousCycle(1)"
-              class="flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-mono font-bold bg-purple-600 hover:bg-purple-500 text-white transition shadow-sm flex items-center gap-1.5"
-            >
-              <span>▶</span>
-              <span>Continuar 1 paso (~$0.00018 USD)</span>
-            </button>
+          <div class="flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div class="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                type="button"
+                @click="stopAutonomous"
+                class="flex-1 sm:flex-initial px-3.5 py-2 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+              >
+                ⏸ Pausar (Idle)
+              </button>
+              <button
+                type="button"
+                @click="autonomousModal?.close(); openResearchMissionModal()"
+                class="flex-1 sm:flex-initial px-3.5 py-2 rounded-lg text-xs font-mono bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border border-emerald-700 transition"
+              >
+                🚀 Cambiar Tema / Tope
+              </button>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2.5 w-full sm:w-auto justify-end">
+              <button
+                type="button"
+                @click="startAutonomousCycle(3)"
+                class="flex-1 sm:flex-initial px-3.5 py-2 rounded-lg text-xs font-mono font-semibold bg-purple-950/90 hover:bg-purple-900 text-purple-200 border border-purple-700 transition shadow-sm"
+                title="Ejecutar 3 pasos automáticos antes de volver a preguntar"
+              >
+                ⏩ Ráfaga de 3 pasos (~$0.0006 USD)
+              </button>
+              <button
+                type="button"
+                @click="startAutonomousCycle(1)"
+                class="flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-mono font-bold bg-purple-600 hover:bg-purple-500 text-white transition shadow-sm flex items-center gap-1.5"
+              >
+                <span>▶</span>
+                <span>Continuar 1 paso (~$0.00018 USD)</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -2807,6 +2877,7 @@ onMounted(async () => {
               <option :value="3">Ráfaga de 3 pasos (~$0.0006 USD)</option>
               <option :value="5">Ráfaga de 5 pasos (~$0.0010 USD)</option>
               <option :value="10">Ráfaga de 10 pasos (~$0.0020 USD)</option>
+              <option value="auto_budget">🔄 Modo Automático (hasta terminar budget de US${{ Number(missionForm.budget_usd || 2).toFixed(2) }})</option>
             </select>
             <span class="text-[10px] font-mono text-slate-500 block">
               Se detendrá al cumplir estos pasos o si alcanza tu tope de US${{ Number(missionForm.budget_usd || 2).toFixed(2) }}.

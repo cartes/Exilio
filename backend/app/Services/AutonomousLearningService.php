@@ -76,6 +76,7 @@ class AutonomousLearningService
             if (!in_array($memory->id, $existingEv)) {
                 $existingEv[] = $memory->id;
             }
+            $existingEv = array_slice($existingEv, -30);
 
             $personality[$traitKey] = [
                 'key' => $traitKey,

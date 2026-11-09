@@ -90,7 +90,7 @@ class GeminiService
         $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}";
 
         try {
-            $response = Http::timeout(15)->post($url, [
+            $payload = [
                 'system_instruction' => [
                     'parts' => [
                         ['text' => $systemInstruction],
@@ -105,10 +105,18 @@ class GeminiService
                     ],
                 ],
                 'generationConfig' => [
-                    'temperature' => 0.3,
+                    'temperature' => 0.5,
                     'maxOutputTokens' => 800,
                 ],
-            ]);
+            ];
+
+            $response = Http::timeout(20)->post($url, $payload);
+
+            // If rate-limited (429) or temporarily overloaded (503), wait 2s and retry once
+            if (in_array($response->status(), [429, 503], true) && app()->environment() !== 'testing') {
+                sleep(2);
+                $response = Http::timeout(20)->post($url, $payload);
+            }
 
             if (!$response->successful()) {
                 $errorData = $response->json('error') ?? [];

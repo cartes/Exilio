@@ -112,11 +112,11 @@ INSTRUCTION;
         $fallbackJson = json_encode([
             'topic' => $topic,
             'curiosity_score' => $curiosityScore,
-            'deliberation' => "EXILIO-001 evalúa el tópico '{$topic}' debido a una prioridad de curiosidad C={$curiosityScore}. El análisis cognitivo conecta las observaciones previas de la memoria con la necesidad de reducir la incertidumbre epistémica.",
-            'hypothesis_content' => "Hipótesis preliminar: La evolución de '{$topic}' presenta correlaciones directas con los eventos documentados en las evidencias de la versión v{$agent->personality_version}.0.",
-            'confidence' => 0.60,
+            'deliberation' => "Analizando alternativas prácticas y accesibles sobre '{$topic}' a partir de la consulta: {$exploratoryQuery}.",
+            'hypothesis_content' => "Sobre '{$topic}': La estrategia más efectiva con baja inversión inicial consiste en combinar herramientas digitales automatizadas con servicios o productos de entrega directa en línea.",
+            'confidence' => 0.65,
             'taxonomic_type' => 'semantic',
-            'next_exploratory_question' => "¿Qué indicadores cuantitativos adicionales permiten validar la hipótesis sobre '{$topic}'?",
+            'next_exploratory_question' => "¿Qué modelos específicos dentro de '{$topic}' permiten generar los primeros resultados en menos de 30 días con mínimo esfuerzo operativo?",
         ], JSON_UNESCAPED_UNICODE);
 
         // 3. Call Gemini
@@ -217,12 +217,12 @@ INSTRUCTION;
             if (!empty($finding['next_exploratory_question'])) {
                 $interests[$topic]['exploratory_query'] = trim($finding['next_exploratory_question']);
             }
-            // Add the new memory ID to evidence list
+            // Add the new memory ID to evidence list (keep latest 30 for performance)
             $existingEv = $interests[$topic]['evidence_memory_ids'] ?? [];
             if (!in_array($memory->id, $existingEv)) {
                 $existingEv[] = $memory->id;
             }
-            $interests[$topic]['evidence_memory_ids'] = $existingEv;
+            $interests[$topic]['evidence_memory_ids'] = array_slice($existingEv, -30);
             $attributes['interests'] = $interests;
             $agent->attributes = $attributes;
             $agent->save();
