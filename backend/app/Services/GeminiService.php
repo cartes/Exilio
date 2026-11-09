@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Log;
 
 class GeminiService
 {
-    public const DEFAULT_MODEL = 'gemini-2.5-flash';
+    public const DEFAULT_MODEL = 'gemini-2.5-flash-lite';
 
     // Pricing per token (approx Gemini 2.5 Flash: $0.075 / 1M prompt, $0.30 / 1M output)
     public const PROMPT_TOKEN_COST_USD = 0.000000075;
@@ -111,13 +111,16 @@ class GeminiService
             ]);
 
             if (!$response->successful()) {
+                $errorData = $response->json('error') ?? [];
+                $errorMsg = $errorData['message'] ?? "HTTP {$response->status()}";
                 Log::warning('Gemini API call returned non-200', [
                     'status' => $response->status(),
+                    'error' => $errorData,
                     'body' => $response->body(),
                 ]);
 
                 return [
-                    'content' => "[Error temporal con Gemini API ({$response->status()})] " . $fallbackResponse,
+                    'content' => "[Aviso Gemini API ({$response->status()}): {$errorMsg}] " . $fallbackResponse,
                     'provider' => 'gemini_fallback',
                     'model' => $model,
                     'tokens_used' => 0,

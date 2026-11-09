@@ -62,6 +62,12 @@ La arquitectura integra Gemini mediante un patrón híbrido de introspección co
   - `GET /api/agents/{agent}/ai-usage`: Consulta el consumo presupuestario del mes actual frente al límite de US$5.00.
 - **Consola de Diálogo en Frontend (`frontend/src/App.vue`):**
   - Componente interactivo para conversar con EXILIO-001, con visualizador de consumo de cuota mensual y badges de fuentes referenciadas en cada respuesta.
+- **Ciclo de Indagación Cognitiva bajo Demanda (`ExplorationService.php`):**
+  - Permite al observador activar un ciclo de exploración guiado por la mayor puntuación de curiosidad $C = 0.30N + 0.25I + 0.30A + 0.15R$.
+  - Endpoints:
+    - `POST /api/agents/{agent}/explore`: Ejecuta la deliberación cognitiva sobre la pregunta exploratoria activa, formula una hipótesis tentativa (con `confidence` en $[0.10, 0.90]$) y sugiere la siguiente pregunta orientadora.
+    - `POST /api/agents/{agent}/explore/persist`: Registra el hallazgo aprobado como memoria autobiográfica en `memories` (`origin: agent_inference`, `epistemic_status: hypothesis`) y actualiza la indagación guiada en el interés.
+  - Interfaz: Botones de indagación en el panel de curiosidad y en el chat, con modal dedicado que muestra razonamiento, hipótesis y telemetría para su aprobación explícita por el auditor.
 
 ## Motor cognitivo y proveedores
 

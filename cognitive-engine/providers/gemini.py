@@ -8,7 +8,7 @@ from .base import AIProvider
 
 
 class GeminiProvider(AIProvider):
-    DEFAULT_MODEL = "gemini-2.5-flash"
+    DEFAULT_MODEL = "gemini-2.5-flash-lite"
     PROMPT_TOKEN_COST_USD = 0.000000075
     COMPLETION_TOKEN_COST_USD = 0.00000030
 
