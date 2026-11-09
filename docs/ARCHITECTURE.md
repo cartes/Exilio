@@ -77,6 +77,14 @@ La arquitectura integra Gemini mediante un patrón híbrido de introspección co
 - **Tema fijado por el agente:** el tema de la indagación no lo reescribe el modelo.
 - **Tope de misión verificable:** el cliente envía `mission_id` (UUID) y `mission_budget_usd`; el servidor calcula el gasto sumando `ai_usage_logs.mission_id`. `mission_spent_usd` ya no se acepta. Sin `mission_id` no se admite tope de misión. El límite mensual de US$5 sigue siendo la compuerta global.
 
+### Mensajes del modelo: negativas, redirecciones y recomendaciones
+
+El contrato JSON de la indagación incluye `decision` (`investigate` | `decline` | `redirect`), `decline_reason`, `suggested_topic` y `recommendations` (máx. 3):
+- `decline`/`redirect` (o un bloqueo del proveedor: `promptFeedback.blockReason`/`finishReason` de Gemini, `stop_reason: refusal` de Claude) devuelven `checkpoint.status = provider_declined` / `provider_redirect` (y `inquiry_report.decision` en `/explore`). No se persiste hipótesis, no cambia la versión y la autonomía se detiene.
+- El cambio de tema **nunca se aplica solo**: la interfaz muestra razón, tema sugerido y recomendaciones, y el auditor decide si investigar el tema sugerido.
+- Las recomendaciones de una investigación normal se muestran junto al checkpoint. Las respuestas libres del chat no se interpretan estructuradamente.
+- En este ciclo el modelo no tiene acceso a internet y el prompt le indica no afirmar que consultó fuentes.
+
 ## Motor onírico mínimo (Fase 5)
 
 `DreamService` (`backend/app/Services/DreamService.php`) genera simulaciones internas bajo demanda a partir de memorias vigentes `fact`/`hypothesis`:

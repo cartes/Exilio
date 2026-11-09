@@ -174,6 +174,7 @@ class ClaudeService
                 'current_month_spend_usd' => $currentMonthSpend + $cost,
                 'monthly_budget_usd' => $monthlyBudget,
                 'budget_exceeded' => false,
+                'refusal_reason' => ($data['stop_reason'] ?? null) === 'refusal' ? 'refusal' : null,
             ];
         } catch (\Throwable $e) {
             Log::error('Exception connecting to Anthropic Claude API', ['error' => $e->getMessage()]);

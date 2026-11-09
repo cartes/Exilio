@@ -60,6 +60,12 @@ class AutonomousLearningService
             return $this->skippedFallbackResult($agent, $inquiry, $monthlyBudget, $missionBudget, $missionSpent());
         }
 
+        // 1c. El modelo declinó o propuso cambiar de tema: se informa al auditor y la autonomía se
+        // detiene. No se guarda hipótesis, no cambia la versión y el tema NO se cambia solo.
+        if (($inquiry['decision'] ?? 'investigate') !== 'investigate') {
+            return $this->guidanceResult($agent, $inquiry, $monthlyBudget, $missionBudget, $missionSpent());
+        }
+
         // 2. Persist the generated hypothesis into memories table
         $persistResult = $this->explorationService->persistFinding($agent, $inquiry);
         $memory = $persistResult['memory'];
@@ -182,6 +188,8 @@ class AutonomousLearningService
                 'cost_usd' => $inquiry['telemetry']['cost_usd'],
                 'tokens_used' => $inquiry['telemetry']['tokens_used'],
                 'provider' => $inquiry['telemetry']['provider'],
+                'recommendations' => $inquiry['recommendations'] ?? [],
+                'suggested_topic' => $inquiry['suggested_topic'] ?? null,
             ],
             'next_step_proposal' => [
                 'topic' => $inquiry['topic'],
@@ -225,6 +233,43 @@ class AutonomousLearningService
             ],
             'checkpoint_message' => "No hubo una respuesta real del modelo (proveedor: {$provider}). "
                 . 'No se guardó ninguna hipótesis ni cambió la versión: un texto local de respaldo no cuenta como aprendizaje.',
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $inquiry
+     * @return array<string, mixed>
+     */
+    protected function guidanceResult(Agent $agent, array $inquiry, float $monthlyBudget, ?float $missionBudget, float $missionSpent): array
+    {
+        $declined = $inquiry['decision'] === 'decline';
+        $spend = (float) AiUsageLog::where('agent_id', $agent->id)
+            ->where('created_at', '>=', now()->startOfMonth())
+            ->sum('estimated_cost_usd');
+
+        $message = ($declined ? 'El modelo declinó investigar' : 'El modelo propone cambiar de tema respecto a')
+            . " «{$inquiry['topic']}»: {$inquiry['decline_reason']}";
+        if (!empty($inquiry['suggested_topic'])) {
+            $message .= "\nTema sugerido: «{$inquiry['suggested_topic']}».";
+        }
+        $message .= "\nNo se guardó ninguna hipótesis ni cambió la versión. Tú decides si cambiar de tema.";
+
+        return [
+            'status' => $declined ? 'provider_declined' : 'provider_redirect',
+            'agent' => $agent->fresh(),
+            'topic' => $inquiry['topic'],
+            'decline_reason' => $inquiry['decline_reason'],
+            'suggested_topic' => $inquiry['suggested_topic'],
+            'recommendations' => $inquiry['recommendations'],
+            'cost_usd' => $inquiry['telemetry']['cost_usd'],
+            'budget_telemetry' => [
+                'monthly_budget_usd' => $monthlyBudget,
+                'current_month_spend_usd' => round($spend, 6),
+                'remaining_budget_usd' => round(max(0.0, $monthlyBudget - $spend), 6),
+                'mission_budget_usd' => $missionBudget,
+                'mission_spent_usd' => round($missionSpent, 6),
+            ],
+            'checkpoint_message' => $message,
         ];
     }
 }

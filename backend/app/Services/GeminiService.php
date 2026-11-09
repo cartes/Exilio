@@ -163,6 +163,11 @@ class GeminiService
             $data = $response->json();
             $text = $data['candidates'][0]['content']['parts'][0]['text'] ?? $fallbackResponse;
 
+            // Bloqueo por política del proveedor: no hay texto real que interpretar.
+            $finishReason = $data['candidates'][0]['finishReason'] ?? null;
+            $refusalReason = $data['promptFeedback']['blockReason']
+                ?? (in_array($finishReason, ['SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII'], true) ? $finishReason : null);
+
             $usageMetadata = $data['usageMetadata'] ?? [];
             $promptTokens = (int) ($usageMetadata['promptTokenCount'] ?? 0);
             $completionTokens = (int) ($usageMetadata['candidatesTokenCount'] ?? 0);
@@ -194,6 +199,7 @@ class GeminiService
                 'current_month_spend_usd' => $currentMonthSpend + $cost,
                 'monthly_budget_usd' => $monthlyBudget,
                 'budget_exceeded' => false,
+                'refusal_reason' => $refusalReason,
             ];
         } catch (\Throwable $e) {
             Log::error('Exception connecting to Gemini API', ['error' => $e->getMessage()]);

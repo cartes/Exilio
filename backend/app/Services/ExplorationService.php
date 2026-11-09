@@ -96,7 +96,11 @@ Debes responder ESTRICTAMENTE en formato JSON plano (sin bloques markdown de có
   "hypothesis_content": "Una idea, conclusión o estrategia práctica y fácil de entender que responde directamente a la pregunta investigada.",
   "confidence": 0.70,
   "taxonomic_type": "semantic",
-  "next_exploratory_question": "Una siguiente pregunta práctica e interesante que explore un ángulo diferente o complementario del tema (sin tecnicismos)."
+  "next_exploratory_question": "Una siguiente pregunta práctica e interesante que explore un ángulo diferente o complementario del tema (sin tecnicismos).",
+  "decision": "investigate",
+  "decline_reason": null,
+  "suggested_topic": null,
+  "recommendations": ["0 a 3 sugerencias breves para el auditor: otros ángulos, temas o precauciones"]
 }
 
 REGLAS EPISTÉMICAS:
@@ -104,6 +108,8 @@ REGLAS EPISTÉMICAS:
 2. "confidence" debe ser un número flotante entre 0.30 y 0.85 (nunca 1.0 porque es hipótesis).
 3. "taxonomic_type" debe ser "semantic" o "episodic".
 4. Sin afirmaciones de consciencia biológica ni emociones humanas.
+5. "decision" es "investigate" por defecto. Usa "decline" si no puedes o no debes investigar este tema (riesgo, no verificable, fuera de tus capacidades) y "redirect" si conviene cambiar a otro tema. En ambos casos explica "decline_reason", propón "suggested_topic" si tienes uno mejor y puedes omitir "hypothesis_content" y "confidence".
+6. En este ciclo NO tienes acceso a internet: razonas desde tu conocimiento y no debes afirmar que consultaste fuentes.
 INSTRUCTION;
 
         $userPrompt = "Ejecuta la indagación cognitiva sobre el tópico '{$topic}' y su pregunta '{$exploratoryQuery}'. Devuelve el JSON con la deliberación, la hipótesis resultante y la siguiente pregunta guiada.";
@@ -133,6 +139,24 @@ INSTRUCTION;
             ]
         );
 
+        $telemetry = [
+            'provider' => $geminiResponse['provider'],
+            'model' => $geminiResponse['model'],
+            'tokens_used' => $geminiResponse['tokens_used'],
+            'cost_usd' => $geminiResponse['cost_usd'],
+            'current_month_spend_usd' => $geminiResponse['current_month_spend_usd'],
+            'monthly_budget_usd' => $geminiResponse['monthly_budget_usd'],
+        ];
+
+        // 3b. El proveedor bloqueó la respuesta: no hay hipótesis que interpretar ni que inventar.
+        if (!empty($geminiResponse['refusal_reason'])) {
+            return $this->guidanceReport(
+                $topic, $curiosityScore, $exploratoryQuery, 'decline',
+                "El proveedor ({$geminiResponse['provider']}) declinó responder sobre este tema: {$geminiResponse['refusal_reason']}.",
+                null, [], $telemetry
+            );
+        }
+
         // 4. Parse JSON
         $rawContent = trim($geminiResponse['content']);
         $jsonStr = $rawContent;
@@ -142,6 +166,22 @@ INSTRUCTION;
 
         $parsed = json_decode($jsonStr, true);
         $parseFailed = false;
+
+        $decision = is_array($parsed) && in_array($parsed['decision'] ?? 'investigate', ['investigate', 'decline', 'redirect'], true)
+            ? ($parsed['decision'] ?? 'investigate')
+            : 'investigate';
+
+        // El modelo puede negarse o redirigir el tema: se respeta, sin fabricar una hipótesis.
+        if (is_array($parsed) && $decision !== 'investigate'
+            && (trim((string) ($parsed['decline_reason'] ?? '')) !== '' || trim((string) ($parsed['suggested_topic'] ?? '')) !== '')) {
+            return $this->guidanceReport(
+                $topic, $curiosityScore, $exploratoryQuery, $decision,
+                trim((string) ($parsed['decline_reason'] ?? '')) ?: 'El modelo sugiere cambiar de tema.',
+                $parsed['suggested_topic'] ?? null,
+                $parsed['recommendations'] ?? [],
+                $telemetry
+            );
+        }
 
         if (!$parsed || !isset($parsed['hypothesis_content'])) {
             $parseFailed = true;
@@ -163,15 +203,72 @@ INSTRUCTION;
             'next_exploratory_question' => $parsed['next_exploratory_question'] ?? "¿Cómo evoluciona {$topic}?",
             // true cuando la hipótesis es el texto local enlatado y no una generación real del modelo
             'is_fallback' => $parseFailed || !GeminiService::isRealProvider($geminiResponse['provider'] ?? null),
-            'telemetry' => [
-                'provider' => $geminiResponse['provider'],
-                'model' => $geminiResponse['model'],
-                'tokens_used' => $geminiResponse['tokens_used'],
-                'cost_usd' => $geminiResponse['cost_usd'],
-                'current_month_spend_usd' => $geminiResponse['current_month_spend_usd'],
-                'monthly_budget_usd' => $geminiResponse['monthly_budget_usd'],
-            ],
+            'decision' => 'investigate',
+            'decline_reason' => null,
+            'suggested_topic' => $this->cleanTopic($parsed['suggested_topic'] ?? null),
+            'recommendations' => $this->cleanRecommendations($parsed['recommendations'] ?? []),
+            'telemetry' => $telemetry,
         ];
+    }
+
+    /**
+     * Informe de una indagación que el modelo declinó o redirigió: sin hipótesis ni efectos persistentes.
+     *
+     * @param  mixed  $recommendations
+     * @param  array<string, mixed>  $telemetry
+     * @return array<string, mixed>
+     */
+    protected function guidanceReport(
+        string $topic,
+        float $curiosityScore,
+        string $exploratoryQuery,
+        string $decision,
+        string $reason,
+        mixed $suggestedTopic,
+        mixed $recommendations,
+        array $telemetry
+    ): array {
+        return [
+            'topic' => $topic,
+            'curiosity_score' => $curiosityScore,
+            'exploratory_query' => $exploratoryQuery,
+            'deliberation' => $reason,
+            'hypothesis_content' => '',
+            'confidence' => 0.0,
+            'taxonomic_type' => 'semantic',
+            'next_exploratory_question' => null,
+            // Una negativa o redirección solo puede provenir de una respuesta real del proveedor.
+            'is_fallback' => false,
+            'decision' => $decision,
+            'decline_reason' => $reason,
+            'suggested_topic' => $this->cleanTopic($suggestedTopic),
+            'recommendations' => $this->cleanRecommendations($recommendations),
+            'telemetry' => $telemetry,
+        ];
+    }
+
+    protected function cleanTopic(mixed $topic): ?string
+    {
+        $t = is_string($topic) ? trim($topic) : '';
+
+        return $t === '' ? null : mb_substr($t, 0, 120);
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function cleanRecommendations(mixed $items): array
+    {
+        if (!is_array($items)) {
+            return [];
+        }
+
+        return collect($items)
+            ->filter(fn ($i) => is_string($i) && trim($i) !== '')
+            ->map(fn ($i) => mb_substr(trim($i), 0, 200))
+            ->take(3)
+            ->values()
+            ->all();
     }
 
     /**

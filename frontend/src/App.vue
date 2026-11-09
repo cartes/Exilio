@@ -3,6 +3,7 @@ import { ref, computed, onMounted, nextTick, useTemplateRef } from 'vue'
 import AgentOrb from './components/AgentOrb.vue'
 import MemoryConstellation from './components/MemoryConstellation.vue'
 import DreamPanel from './components/DreamPanel.vue'
+import ProviderGuidance from './components/ProviderGuidance.vue'
 
 const agent = ref(null)
 const memories = ref([])
@@ -52,6 +53,7 @@ const learnModal = useTemplateRef('learnModal')
 const versionsModal = useTemplateRef('versionsModal')
 const inquiryModal = useTemplateRef('inquiryModal')
 const autonomousModal = useTemplateRef('autonomousModal')
+const guidanceModal = useTemplateRef('guidanceModal')
 const researchMissionModal = useTemplateRef('researchMissionModal')
 
 // Exploration Inquiry State (Fase 4 - Opción A)
@@ -625,7 +627,12 @@ async function runInquiryCycle(requestedTopic = null) {
 
     const data = await res.json()
     inquiryReport.value = data.inquiry_report
-    inquiryModal.value?.showModal()
+    if (inquiryReport.value.decision && inquiryReport.value.decision !== 'investigate') {
+      showGuidance(inquiryReport.value, inquiryReport.value.decision)
+      inquiryReport.value = null
+    } else {
+      inquiryModal.value?.showModal()
+    }
     await fetchAiUsage()
   } catch (err) {
     error.value = err.message
@@ -674,9 +681,27 @@ async function persistInquiryFinding() {
 function openResearchMissionModal(presetTopic = '', presetQuery = '') {
   if (presetTopic) {
     missionForm.value.topic = presetTopic
-    missionForm.value.exploratory_query = presetQuery || `¿Qué oportunidades, estrategias y soluciones prácticas existen hoy sobre ${presetTopic}?`
+    missionForm.value.exploratory_query = presetQuery || `¿Qué se sabe con certeza, qué es incierto y qué merece investigarse sobre ${presetTopic}?`
   }
   researchMissionModal.value?.showModal()
+}
+
+// El modelo declinó o propuso otro rumbo: se muestra al auditor, que decide si cambia de tema.
+function showGuidance(source, kind) {
+  guidanceModal.value?.open({
+    kind,
+    topic: source.topic,
+    reason: source.decline_reason || source.deliberation || '',
+    suggestedTopic: source.suggested_topic || null,
+    recommendations: source.recommendations || [],
+  })
+}
+
+function adoptSuggestedTopic(topic) {
+  missionForm.value.topic = topic
+  missionForm.value.exploratory_query = ''
+  activeMission.value = null
+  openResearchMissionModal()
 }
 
 function applyMissionPreset(topic, query) {
@@ -790,6 +815,20 @@ async function executeNextAutonomousStep() {
 
     const data = await res.json()
     const cp = data.checkpoint
+    if (cp.status === 'provider_declined' || cp.status === 'provider_redirect') {
+      autonomousRunning.value = false
+      autoUntilBudgetExhausted.value = false
+      autonomousCyclesRemaining.value = 0
+      if (cp.agent) agent.value = cp.agent
+      if (activeMission.value && cp.budget_telemetry?.mission_spent_usd != null) {
+        activeMission.value.spent_usd = cp.budget_telemetry.mission_spent_usd
+      }
+      setProcess('idle', 'En reposo (Idle) — El modelo propone otro rumbo', 'Esperando tu decisión sobre el tema.')
+      showGuidance(cp, cp.status === 'provider_declined' ? 'decline' : 'redirect')
+      await fetchAiUsage()
+      return
+    }
+
     if (cp.status === 'fallback_skipped') {
       // Sin respuesta real del modelo: el backend no guardó nada ni cambió la versión.
       autonomousRunning.value = false
@@ -2622,6 +2661,11 @@ onMounted(async () => {
           <p class="text-purple-200 font-sans">{{ inquiryReport.next_exploratory_question }}</p>
         </div>
 
+        <div v-if="inquiryReport.recommendations?.length" class="p-3 rounded-lg bg-slate-950 border border-slate-800 text-xs space-y-1">
+          <span class="text-[10px] font-mono uppercase text-cyan-300 block">Recomendaciones del modelo:</span>
+          <ul class="list-disc pl-4 text-slate-300 space-y-0.5"><li v-for="(r, i) in inquiryReport.recommendations" :key="i">{{ r }}</li></ul>
+        </div>
+
         <!-- Telemetría de la indagación -->
         <div class="p-2.5 rounded-lg bg-slate-950 border border-slate-800/60 flex flex-wrap items-center justify-between text-[11px] font-mono text-slate-400 gap-2">
           <span>Proveedor: <strong class="text-slate-200">{{ inquiryReport.telemetry?.provider }}</strong></span>
@@ -2651,6 +2695,8 @@ onMounted(async () => {
         </div>
       </div>
     </dialog>
+
+    <ProviderGuidance ref="guidanceModal" @adopt-topic="adoptSuggestedTopic" />
 
     <!-- Modal: Checkpoint de Aprendizaje Autónomo (Fase 4 - Modo Autónomo Human-in-the-Loop) -->
     <dialog
@@ -2742,6 +2788,15 @@ onMounted(async () => {
               </span>
             </div>
           </div>
+        </div>
+
+        <div v-if="autonomousCheckpoint.completed_step?.recommendations?.length" class="p-3.5 rounded-lg bg-slate-950 border border-slate-800 text-xs space-y-1">
+          <span class="text-[10px] font-mono uppercase font-bold text-cyan-300 block">Recomendaciones del modelo:</span>
+          <ul class="list-disc pl-4 text-slate-300 space-y-0.5"><li v-for="(r, i) in autonomousCheckpoint.completed_step.recommendations" :key="i">{{ r }}</li></ul>
+          <p v-if="autonomousCheckpoint.completed_step.suggested_topic" class="text-slate-400 pt-1">
+            Tema sugerido: <button type="button" class="text-violet-300 underline hover:text-white"
+              @click="adoptSuggestedTopic(autonomousCheckpoint.completed_step.suggested_topic)">{{ autonomousCheckpoint.completed_step.suggested_topic }}</button>
+          </p>
         </div>
 
         <!-- Propuesta para el Próximo Paso -->
