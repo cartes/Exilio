@@ -2768,8 +2768,8 @@ onMounted(async () => {
               <input
                 id="mission_budget_input"
                 type="number"
-                step="0.10"
-                min="0.05"
+                step="any"
+                min="0.01"
                 max="5.00"
                 v-model="missionForm.budget_usd"
                 required
