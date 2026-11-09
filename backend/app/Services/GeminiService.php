@@ -117,17 +117,16 @@ class GeminiService
                         ['text' => $systemInstruction],
                     ],
                 ],
-                'contents' => [
-                    [
-                        'role' => 'user',
-                        'parts' => [
-                            ['text' => $userMessage],
-                        ],
+                'contents' => array_map(
+                    fn (array $m) => [
+                        'role' => $m['role'] === 'assistant' ? 'model' : 'user',
+                        'parts' => [['text' => $m['content']]],
                     ],
-                ],
+                    ChatMessages::build($groundingData['history'] ?? [], $userMessage)
+                ),
                 'generationConfig' => [
                     'temperature' => 0.5,
-                    'maxOutputTokens' => 800,
+                    'maxOutputTokens' => 1024,
                 ],
             ];
 
@@ -161,12 +160,17 @@ class GeminiService
             }
 
             $data = $response->json();
-            $text = $data['candidates'][0]['content']['parts'][0]['text'] ?? $fallbackResponse;
+            $modelText = trim((string) collect($data['candidates'][0]['content']['parts'] ?? [])->pluck('text')->implode(''));
+            $text = $modelText !== '' ? $modelText : $fallbackResponse;
+            if ($modelText !== '' && ($data['candidates'][0]['finishReason'] ?? null) === 'MAX_TOKENS') {
+                $text = ChatMessages::trimToLastSentence($text);
+            }
 
             // Bloqueo por política del proveedor: no hay texto real que interpretar.
             $finishReason = $data['candidates'][0]['finishReason'] ?? null;
             $refusalReason = $data['promptFeedback']['blockReason']
-                ?? (in_array($finishReason, ['SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII'], true) ? $finishReason : null);
+                ?? (in_array($finishReason, ['SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII'], true) ? $finishReason : null)
+                ?? ($modelText === '' ? 'empty_response' : null);
 
             $usageMetadata = $data['usageMetadata'] ?? [];
             $promptTokens = (int) ($usageMetadata['promptTokenCount'] ?? 0);

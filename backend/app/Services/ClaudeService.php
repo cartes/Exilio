@@ -92,14 +92,9 @@ class ClaudeService
 
         $payload = [
             'model' => $model,
-            'max_tokens' => 800,
+            'max_tokens' => 1024,
             'system' => $systemInstruction,
-            'messages' => [
-                [
-                    'role' => 'user',
-                    'content' => $userMessage,
-                ],
-            ],
+            'messages' => ChatMessages::build($groundingData['history'] ?? [], $userMessage),
         ];
 
         try {
@@ -141,7 +136,19 @@ class ClaudeService
             }
 
             $data = $response->json();
-            $text = $data['content'][0]['text'] ?? $fallbackResponse;
+            // Concatena todos los bloques de texto; si no hay ninguno (negativa, límite, bloque no textual)
+            // NO se presenta el respaldo local como si fuera la respuesta del modelo.
+            $modelText = trim(collect($data['content'] ?? [])
+                ->filter(fn ($b) => is_array($b) && ($b['type'] ?? '') === 'text')
+                ->pluck('text')
+                ->implode(''));
+            $text = $modelText !== '' ? $modelText : $fallbackResponse;
+            if ($modelText !== '' && ($data['stop_reason'] ?? null) === 'max_tokens') {
+                $text = ChatMessages::trimToLastSentence($text);
+            }
+            $refusalReason = ($data['stop_reason'] ?? null) === 'refusal'
+                ? 'refusal'
+                : ($modelText === '' ? 'empty_response' : null);
 
             $usage = $data['usage'] ?? [];
             $promptTokens = (int) ($usage['input_tokens'] ?? 0);
@@ -174,7 +181,7 @@ class ClaudeService
                 'current_month_spend_usd' => $currentMonthSpend + $cost,
                 'monthly_budget_usd' => $monthlyBudget,
                 'budget_exceeded' => false,
-                'refusal_reason' => ($data['stop_reason'] ?? null) === 'refusal' ? 'refusal' : null,
+                'refusal_reason' => $refusalReason,
             ];
         } catch (\Throwable $e) {
             Log::error('Exception connecting to Anthropic Claude API', ['error' => $e->getMessage()]);

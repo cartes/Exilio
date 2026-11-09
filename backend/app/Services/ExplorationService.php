@@ -152,7 +152,7 @@ INSTRUCTION;
         if (!empty($geminiResponse['refusal_reason'])) {
             return $this->guidanceReport(
                 $topic, $curiosityScore, $exploratoryQuery, 'decline',
-                "El proveedor ({$geminiResponse['provider']}) declinó responder sobre este tema: {$geminiResponse['refusal_reason']}.",
+                "El proveedor ({$geminiResponse['provider']}) no devolvió una respuesta utilizable sobre este tema (motivo: {$geminiResponse['refusal_reason']}).",
                 null, [], $telemetry
             );
         }

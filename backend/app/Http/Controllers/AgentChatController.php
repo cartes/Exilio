@@ -51,6 +51,18 @@ class AgentChatController
         $userContent = trim($validated['message']);
 
         return DB::transaction(function () use ($agent, $userContent, $introspectionService, $geminiService, $explorationService) {
+            // 0. Historial reciente (antes de registrar el mensaje actual) para dar continuidad al modelo.
+            //    Se omiten los turnos en los que el modelo no llegó a responder.
+            $history = $agent->chatMessages()
+                ->orderByDesc('created_at')
+                ->limit(8)
+                ->get()
+                ->reverse()
+                ->reject(fn ($m) => ($m->grounding_snapshot['no_model_text'] ?? false) === true)
+                ->map(fn ($m) => ['role' => $m->role === 'agent' ? 'assistant' : 'user', 'content' => $m->content])
+                ->values()
+                ->all();
+
             // 1. Record user message as an episodic fact memory
             $userMemory = $agent->memories()->create([
                 'type' => 'episodic',
@@ -84,15 +96,27 @@ class AgentChatController
                 $userContent,
                 $context['system_instruction'],
                 $context['local_fallback_response'],
-                $context['grounding_data']
+                $context['grounding_data'] + ['history' => $history]
             );
+
+            // 4b. Si el modelo no devolvió texto (negativa, límite, bloque vacío), no se presenta el volcado
+            //     local como si fuera su respuesta: se dice con honestidad y se invita a reformular.
+            $snapshot = $context['grounding_data'];
+            if (!empty($response['refusal_reason'])) {
+                $response['content'] = $response['refusal_reason'] === 'empty_response'
+                    ? 'No recibí una respuesta del modelo esta vez. Prueba a enviarlo de nuevo o a reformular la pregunta.'
+                    : 'El modelo prefirió no responder a esto tal como está formulado. Si me cuentas qué quieres lograr de fondo '
+                        . '(por ejemplo, «quiero ideas legítimas para generar ingresos con IA»), lo trabajo desde ahí.';
+                $snapshot['no_model_text'] = true;
+                $snapshot['refusal_reason'] = $response['refusal_reason'];
+            }
 
             // 5. Record agent's response in chat messages
             $agentChatMessage = $agent->chatMessages()->create([
                 'role' => 'agent',
                 'content' => $response['content'],
                 'provider' => $response['provider'],
-                'grounding_snapshot' => $context['grounding_data'],
+                'grounding_snapshot' => $snapshot,
                 'tokens_used' => $response['tokens_used'],
                 'cost_usd' => $response['cost_usd'],
                 'created_at' => now(),
