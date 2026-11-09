@@ -84,6 +84,21 @@ Se mantienen los límites de `FOUNDATION.md`: no asumir conciencia, sentimientos
 
 **Criterio de salida:** el usuario puede dialogar interactivamente con EXILIO-001 desde la interfaz; el agente responde en lenguaje natural fundamentándose con precisión en sus memorias y rasgos; el consumo de tokens y presupuesto de US$5/mes se audita y limita efectivamente; y ante ausencia de clave o exceso de presupuesto el sistema degrada de manera segura sin interrumpir la observación.
 
+## Fase 5 — Motor onírico mínimo (en curso)
+
+**Decisión:** el usuario autorizó explícitamente (2026-11-09) abrir el motor onírico como primer paso de la visión de entidad que investiga y evoluciona. Es la única capacidad nueva de esta fase; web, autodesarrollo y multiagente siguen sin autorizar.
+
+**Decisiones acordadas:**
+
+- **Solo bajo demanda y con aprobación:** `POST /api/agents/{agent}/dream` propone un sueño sin persistir; `POST /api/agents/{agent}/dream/persist` lo registra tras aprobación explícita del auditor. Sin bucles de fondo.
+- **Material de origen:** recombina memorias vigentes `fact` o `hypothesis` (mínimo 2, máximo 4, priorizando variedad temática). Sin experiencia suficiente responde 422: no se sueña de la nada. Nunca usa sueños ni memorias rectificadas como fuente.
+- **Estatus epistémico:** el sueño se guarda como `oneiric` + `dream`, origen `agent_inference`, `confidence = NULL`, con `metadata.source_memory_ids` para auditar la procedencia.
+- **Efecto sobre curiosidad:** siembra un interés `oneiric_seed` con R = 0.15 (tope 0.25) y una `exploratory_query` verificable, creando una versión auditable. Si el interés ya existe (por hechos o hipótesis), solo se enlaza la evidencia onírica sin cambiar R. **Nunca** modifica rasgos de personalidad.
+- **Proveedor y gasto:** pasa por `GeminiService` y su compuerta de US$5/mes. Sin clave o presupuesto agotado usa una recombinación determinista local, marcada `is_fallback: true`.
+- **Pruebas herméticas:** `phpunit.xml` fuerza `AI_PROVIDER=mock` y sin clave, para que la suite nunca llame al proveedor real.
+
+**Criterio de salida:** un sueño aprobado aparece como `dream` auditable con sus fuentes, aumenta la curiosidad hacia una pregunta verificable sin consolidar hechos ni rasgos, y puede revertirse como cualquier versión.
+
 ## Revisión entre fases
 
-Antes de iniciar cada fase posterior, revisar `FOUNDATION.md` y `ARCHITECTURE.md`, resolver las decisiones pendientes pertinentes, acotar el alcance y actualizar documentación. No se implementan bucles autónomos, navegación web, sueños funcionales, operación multiagente ni autodesarrollo como parte de este roadmap sin una decisión explícita futura.
+Antes de iniciar cada fase posterior, revisar `FOUNDATION.md` y `ARCHITECTURE.md`, resolver las decisiones pendientes pertinentes, acotar el alcance y actualizar documentación. No se implementan bucles autónomos, navegación web, operación multiagente ni autodesarrollo como parte de este roadmap sin una decisión explícita futura. El motor onírico queda autorizado únicamente en la forma mínima descrita en la Fase 5.

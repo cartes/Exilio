@@ -16,6 +16,8 @@ La interacción conversacional debe anclarse estrictamente al estado computacion
 - **Salvaguardas éticas:** No asume consciencia, sentimientos humanos ni sufrimiento; reporta sus estados computacionales de forma honesta.
 - **Control presupuestario y telemetría:** Toda llamada a Gemini debe pasar por una compuerta de gasto verificable que respete el presupuesto de referencia de US$5/mes, registrando consumo de tokens y coste estimado. Si no hay clave de API configurada (`GEMINI_API_KEY`) o se supera el presupuesto, el sistema recurre al proveedor simulado (`MockProvider`) o generador introspectivo sin fallar destructivamente.
 
+Además, está autorizado (Fase 5, decisión del usuario del 2026-11-09) un motor onírico mínimo, bajo demanda y con aprobación explícita; ver `docs/ROADMAP.md`. Los sueños son simulaciones (`dream`): nunca consolidan hechos ni rasgos.
+
 No realices llamadas reales a Claude u OpenAI; no despliegues en producción; no implementes bucles autónomos sin demanda del usuario, navegación web, operación multiagente ni autodesarrollo de código. No guardes claves ni secretos en Git.
 
 Respeta la puntuación de curiosidad `C = 0.30N + 0.25I + 0.30A + 0.15R`, con componentes normalizados y pesos que sumen 1. No precargues rasgos de personalidad ni relevancia adquirida sin evidencia.

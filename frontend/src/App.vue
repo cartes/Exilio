@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, nextTick, useTemplateRef } from 'vue'
 import AgentOrb from './components/AgentOrb.vue'
 import MemoryConstellation from './components/MemoryConstellation.vue'
+import DreamPanel from './components/DreamPanel.vue'
 
 const agent = ref(null)
 const memories = ref([])
@@ -835,6 +836,12 @@ async function executeNextAutonomousStep() {
   }
 }
 
+async function onDreamPersisted(data) {
+  if (data?.agent) agent.value = data.agent
+  flashSuccess('Sueño registrado como simulación (dream); sembró una pregunta para investigar.')
+  await Promise.all([fetchMemories(), fetchVersions()])
+}
+
 function stopAutonomous() {
   autonomousRunning.value = false
   autoUntilBudgetExhausted.value = false
@@ -940,6 +947,15 @@ onMounted(async () => {
         </div>
         <div class="lg:col-span-3">
           <MemoryConstellation :memories="memories" />
+          <div class="mt-4">
+            <DreamPanel
+              :agent-id="agent?.id || null"
+              :disabled="autonomousRunning"
+              @busy="(on, title) => on ? setProcess('running', title, 'Motor onírico bajo demanda') : setProcess('idle', 'En reposo (Idle)', 'Ciclo onírico finalizado')"
+              @error="(msg) => error = msg"
+              @persisted="onDreamPersisted"
+            />
+          </div>
         </div>
       </section>
 

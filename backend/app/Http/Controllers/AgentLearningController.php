@@ -288,7 +288,7 @@ class AgentLearningController
         return response()->json($result, 201);
     }
 
-    private function ensureBaselineVersion(Agent $agent): void
+    public static function ensureBaselineVersion(Agent $agent): void
     {
         $hasInitial = $agent->learningVersions()->where('version', 1)->exists();
         if (!$hasInitial) {
@@ -318,7 +318,7 @@ class AgentLearningController
     /**
      * @return array{novelty: float, uncertainty: float, learning: float, relevance: float}
      */
-    private function deriveCuriositySignals(string $dominantStatus, float $acquiredRelevance, ?float $avgConfidence): array
+    public static function deriveCuriositySignals(string $dominantStatus, float $acquiredRelevance, ?float $avgConfidence): array
     {
         if ($dominantStatus === 'dream') {
             return [

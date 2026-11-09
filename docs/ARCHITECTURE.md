@@ -69,6 +69,13 @@ La arquitectura integra Gemini mediante un patrón híbrido de introspección co
     - `POST /api/agents/{agent}/explore/persist`: Registra el hallazgo aprobado como memoria autobiográfica en `memories` (`origin: agent_inference`, `epistemic_status: hypothesis`) y actualiza la indagación guiada en el interés.
   - Interfaz: Botones de indagación en el panel de curiosidad y en el chat, con modal dedicado que muestra razonamiento, hipótesis y telemetría para su aprobación explícita por el auditor.
 
+## Motor onírico mínimo (Fase 5)
+
+`DreamService` (`backend/app/Services/DreamService.php`) genera simulaciones internas bajo demanda a partir de memorias vigentes `fact`/`hypothesis`:
+- `POST /api/agents/{agent}/dream`: propone un sueño (narrativa, tema y pregunta verificable, fuentes y telemetría) sin persistir. `is_fallback` indica recombinación local en lugar de generación del modelo. Responde 422 con menos de 2 memorias fuente vigentes.
+- `POST /api/agents/{agent}/dream/persist`: tras aprobación explícita, crea una memoria `oneiric`/`dream` (`origin: agent_inference`, sin `confidence`) y siembra un interés `oneiric_seed` (R ≤ 0.25) en una nueva versión de aprendizaje. No altera rasgos de personalidad; las fuentes deben ser memorias vigentes no oníricas del agente.
+- Reutiliza `GeminiService` (compuerta de US$5/mes y telemetría) y las reglas de curiosidad de `AgentLearningController`.
+
 ## Motor cognitivo y proveedores
 
 La configuración vive en variables de entorno con valores predeterminados reproducibles. La curiosidad es una función pura de componentes normalizados y pesos configurables. `AIProvider` define una interfaz asíncrona sin depender de Gemini; un `MockProvider` local sirve para pruebas. El adaptador Gemini futuro deberá mapear el contrato sin contaminar módulos cognitivos.
@@ -79,4 +86,4 @@ PostgreSQL 16 es la base de datos inicial. Compose usa imagen compatible con pgv
 
 ## Controles
 
-Las claves se inyectan desde el entorno. El objetivo presupuestario es US$5/mes, pero su aplicación efectiva requiere telemetría y una puerta de gasto antes de habilitar proveedores reales. No se ejecuta código generado ni se permite a agentes mutar políticas, permisos o controles. No se implementan navegación web, sueños, autodesarrollo o procesos cognitivos continuos en fase 0.
+Las claves se inyectan desde el entorno. El objetivo presupuestario es US$5/mes, pero su aplicación efectiva requiere telemetría y una puerta de gasto antes de habilitar proveedores reales. No se ejecuta código generado ni se permite a agentes mutar políticas, permisos o controles. No se implementan navegación web, autodesarrollo o procesos cognitivos continuos; el motor onírico existe solo en su forma mínima bajo demanda (Fase 5).

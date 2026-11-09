@@ -3,6 +3,7 @@
 use App\Http\Controllers\AgentAutonomousController;
 use App\Http\Controllers\AgentChatController;
 use App\Http\Controllers\AgentController;
+use App\Http\Controllers\AgentDreamController;
 use App\Http\Controllers\AgentExplorationController;
 use App\Http\Controllers\AgentLearningController;
 use App\Http\Controllers\MemoryController;
@@ -18,6 +19,9 @@ Route::get('/agents/{agent}/ai-usage', [AgentChatController::class, 'usage']);
 Route::post('/agents/{agent}/explore', [AgentExplorationController::class, 'inquire']);
 Route::post('/agents/{agent}/explore/persist', [AgentExplorationController::class, 'persist']);
 Route::post('/agents/{agent}/autonomous-step', [AgentAutonomousController::class, 'step']);
+
+Route::post('/agents/{agent}/dream', [AgentDreamController::class, 'dream']);
+Route::post('/agents/{agent}/dream/persist', [AgentDreamController::class, 'persist']);
 
 Route::get('/agents/{agent}/versions', [AgentLearningController::class, 'index']);
 Route::post('/agents/{agent}/learn', [AgentLearningController::class, 'learn']);
