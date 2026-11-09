@@ -1,5 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, nextTick, useTemplateRef } from 'vue'
+import AgentOrb from './components/AgentOrb.vue'
+import MemoryConstellation from './components/MemoryConstellation.vue'
 
 const agent = ref(null)
 const memories = ref([])
@@ -852,22 +854,15 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+  <div class="aurora min-h-screen text-slate-100 flex flex-col font-sans">
     <!-- Top System Bar -->
-    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-30 px-6 py-4">
+    <header class="border-b border-violet-300/10 bg-slate-950/40 backdrop-blur-md sticky top-0 z-30 px-6 py-3">
       <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div class="flex items-center gap-3">
-          <div class="h-3 w-3 rounded-full bg-cyan-400 animate-pulse"></div>
-          <div>
-            <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
-              PROYECTO EXILIO
-              <span
-                class="text-xs font-mono font-normal px-2 py-0.5 rounded bg-slate-800 text-cyan-300 border border-cyan-800">Fase
-                4: Diálogo Introspectivo (Gemini 2.5) & Aprendizaje Controlado</span>
-            </h1>
-            <p class="text-xs text-slate-400">Inspección ontológica, procedencia auditable y evolución versionada sin
-              inferencia de estados subjetivos</p>
-          </div>
+        <div>
+          <h1 class="text-sm tracking-[0.35em] uppercase text-violet-100/90" style="font-family: ui-serif, Georgia, serif">
+            Proyecto Exilio
+          </h1>
+          <p class="text-[11px] text-violet-200/45">Fase 4 · observación local · estados computacionales, no subjetivos</p>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
@@ -928,6 +923,32 @@ onMounted(async () => {
         <button type="button" @click="error = null" class="text-rose-400 hover:text-white">✕</button>
       </div>
 
+      <!-- Observatorio abstracto: orbe del agente + constelación de memorias -->
+      <section class="grid grid-cols-1 lg:grid-cols-5 gap-8 items-center py-4">
+        <div class="lg:col-span-2">
+          <AgentOrb
+            :name="agent?.name || 'EXILIO-001'"
+            :version="agent?.personality_version || 1"
+            :curiosity="topInterest?.curiosity_score || 0"
+            :running="activeProcess.status === 'running'"
+            :topic="topInterest?.topic || ''"
+            :process-title="activeProcess.title"
+            :traits-count="personalityList.length"
+            :interests-count="interestsList.length"
+            :memories-count="activeMemories.length"
+          />
+        </div>
+        <div class="lg:col-span-3">
+          <MemoryConstellation :memories="memories" />
+        </div>
+      </section>
+
+      <!-- Datos técnicos de identidad y curiosidad (plegable) -->
+      <details class="group rounded-2xl border border-violet-300/10 bg-slate-950/30 backdrop-blur px-5 py-3 open:pb-5">
+        <summary class="cursor-pointer select-none text-xs tracking-widest uppercase text-violet-200/60 hover:text-violet-100 transition list-none flex items-center gap-2">
+          <span class="transition group-open:rotate-90">›</span> Detalle de auditoría · identidad y función de curiosidad
+        </summary>
+        <div class="mt-5">
       <!-- Agent Overview & Cognitive Config -->
       <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Agent Identity Card -->
@@ -1086,6 +1107,8 @@ onMounted(async () => {
           </div>
         </div>
       </section>
+        </div>
+      </details>
 
       <!-- Consola de Diálogo Introspectivo con EXILIO-001 (Fase 4 - Gemini) -->
       <section class="space-y-6">

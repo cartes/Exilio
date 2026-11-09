@@ -1,5 +1,20 @@
 @import "tailwindcss";
 
+/* Fondo ambiental suave (sin recursos externos: solo gradientes CSS). */
+.aurora {
+  background:
+    radial-gradient(60rem 40rem at 15% -10%, rgb(124 58 237 / 0.18), transparent 60%),
+    radial-gradient(50rem 35rem at 90% 10%, rgb(34 211 238 / 0.10), transparent 60%),
+    radial-gradient(45rem 30rem at 50% 110%, rgb(192 38 211 / 0.10), transparent 60%),
+    #07060f;
+  background-attachment: fixed;
+}
+
+/* Suaviza las tarjetas existentes mientras se migran a componentes. */
+.aurora .bg-slate-900 { background-color: rgb(15 12 30 / 0.55); backdrop-filter: blur(10px); }
+.aurora .border-slate-800 { border-color: rgb(196 181 253 / 0.10); }
+.aurora .rounded-xl { border-radius: 1.25rem; }
+
 /* Centrado exacto horizontal y vertical para elementos <dialog> */
 dialog {
   position: fixed !important;
@@ -16,6 +31,8 @@ dialog[open] {
 }
 
 dialog::backdrop {
-  background-color: rgba(2, 6, 23, 0.85);
+  background-color: rgba(7, 6, 15, 0.85);
   backdrop-filter: blur(8px);
 }
+
+summary::-webkit-details-marker { display: none; }
