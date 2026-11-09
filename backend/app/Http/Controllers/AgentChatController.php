@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Agent;
 use App\Models\AgentChatMessage;
 use App\Models\AiUsageLog;
+use App\Services\ExplorationService;
 use App\Services\GeminiService;
 use App\Services\IntrospectionService;
 use Illuminate\Http\JsonResponse;
@@ -40,7 +41,8 @@ class AgentChatController
         Request $request,
         Agent $agent,
         IntrospectionService $introspectionService,
-        GeminiService $geminiService
+        GeminiService $geminiService,
+        ExplorationService $explorationService
     ): JsonResponse {
         $validated = $request->validate([
             'message' => ['required', 'string', 'max:1000'],
@@ -48,7 +50,7 @@ class AgentChatController
 
         $userContent = trim($validated['message']);
 
-        return DB::transaction(function () use ($agent, $userContent, $introspectionService, $geminiService) {
+        return DB::transaction(function () use ($agent, $userContent, $introspectionService, $geminiService, $explorationService) {
             // 1. Record user message as an episodic fact memory
             $userMemory = $agent->memories()->create([
                 'type' => 'episodic',
@@ -58,6 +60,9 @@ class AgentChatController
                 'evidence_ref' => 'chat-console',
                 'metadata' => ['channel' => 'interactive_dialogue'],
             ]);
+
+            // 1b. If user asks to explore/investigate or asks about an interest topic, sync it to curiosity radar
+            $explorationService->syncInterestFromUserPrompt($agent, $userContent, $userMemory->id);
 
             // 2. Record in agent_chat_messages
             $userChatMessage = $agent->chatMessages()->create([

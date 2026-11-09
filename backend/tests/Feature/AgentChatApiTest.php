@@ -112,5 +112,35 @@ class AgentChatApiTest extends TestCase
         $this->assertSame(1200, $response->json('total_tokens'));
         $this->assertGreaterThan(0.0, $response->json('current_month_spend_usd'));
     }
+
+    public function test_chat_syncs_exploratory_interest_from_user_question(): void
+    {
+        $this->agent->attributes = [
+            'personality' => [],
+            'interests' => [
+                'Obtener dinero' => [
+                    'topic' => 'Obtener dinero',
+                    'acquired_relevance' => 0.25,
+                    'curiosity_score' => 0.43,
+                    'consolidation_status' => 'consolidated',
+                    'source_epistemic_status' => 'fact',
+                    'exploratory_query' => '¿Qué tipos de hardware de minería ofrecen mejor hashrate?',
+                    'evidence_memory_ids' => [],
+                ],
+            ],
+        ];
+        $this->agent->save();
+
+        $response = $this->postJson("/api/agents/{$this->agent->id}/chat", [
+            'message' => 'Puedes indagar de otras formas de obtener dinero??',
+        ]);
+
+        $response->assertStatus(201);
+
+        $freshAgent = $this->agent->fresh();
+        $updatedInterest = $freshAgent->attributes['interests']['Obtener dinero'];
+        $this->assertSame('Puedes indagar de otras formas de obtener dinero??', $updatedInterest['exploratory_query']);
+        $this->assertGreaterThan(0.65, $updatedInterest['curiosity_score']);
+    }
 }
 

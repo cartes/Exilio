@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AgentAutonomousController;
 use App\Http\Controllers\AgentChatController;
 use App\Http\Controllers\AgentController;
 use App\Http\Controllers\AgentExplorationController;
@@ -16,6 +17,7 @@ Route::get('/agents/{agent}/ai-usage', [AgentChatController::class, 'usage']);
 
 Route::post('/agents/{agent}/explore', [AgentExplorationController::class, 'inquire']);
 Route::post('/agents/{agent}/explore/persist', [AgentExplorationController::class, 'persist']);
+Route::post('/agents/{agent}/autonomous-step', [AgentAutonomousController::class, 'step']);
 
 Route::get('/agents/{agent}/versions', [AgentLearningController::class, 'index']);
 Route::post('/agents/{agent}/learn', [AgentLearningController::class, 'learn']);

@@ -48,11 +48,19 @@ const tombstonesModal = useTemplateRef('tombstonesModal')
 const learnModal = useTemplateRef('learnModal')
 const versionsModal = useTemplateRef('versionsModal')
 const inquiryModal = useTemplateRef('inquiryModal')
+const autonomousModal = useTemplateRef('autonomousModal')
 
 // Exploration Inquiry State (Fase 4 - Opción A)
 const exploringInquiry = ref(false)
 const inquiryReport = ref(null)
 const persistingFinding = ref(false)
+
+// Autonomous Supervised Learning State (Fase 4 - Modo Autónomo Human-in-the-Loop)
+const autonomousRunning = ref(false)
+const autonomousCyclesRemaining = ref(0)
+const autonomousCheckpoint = ref(null)
+const sessionCostAccumulated = ref(0.0)
+const sessionCyclesCount = ref(0)
 
 // Form states
 const learnForm = ref({
@@ -631,6 +639,69 @@ async function persistInquiryFinding() {
   }
 }
 
+async function startAutonomousCycle(cyclesCount = 1) {
+  autonomousCyclesRemaining.value = cyclesCount
+  autonomousRunning.value = true
+  autonomousModal.value?.close()
+  await executeNextAutonomousStep()
+}
+
+async function executeNextAutonomousStep() {
+  if (!agent.value || !autonomousRunning.value) return
+  error.value = null
+  setProcess('running', 'Ejecutando Aprendizaje Autónomo', 'EXILIO-001 indaga, formula hipótesis y evoluciona su versión con Gemini...')
+
+  try {
+    const res = await fetch(`/api/agents/${agent.value.id}/autonomous-step`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({
+        topic: autonomousCheckpoint.value?.next_step_proposal?.topic || undefined,
+      }),
+    })
+
+    if (!res.ok) {
+      const data = await res.json()
+      throw new Error(data.message || 'Error en ciclo autónomo')
+    }
+
+    const data = await res.json()
+    const cp = data.checkpoint
+    autonomousCheckpoint.value = cp
+
+    sessionCyclesCount.value++
+    sessionCostAccumulated.value += (cp.completed_step?.cost_usd || 0)
+
+    // Update active agent state and telemetry in UI
+    agent.value = cp.agent
+    await Promise.all([fetchMemories(), fetchVersions(), fetchAiUsage()])
+
+    autonomousCyclesRemaining.value--
+
+    // If batch cycles remain, continue automatically; otherwise, pause at checkpoint and prompt user!
+    if (autonomousCyclesRemaining.value > 0) {
+      setTimeout(() => {
+        executeNextAutonomousStep()
+      }, 1500)
+    } else {
+      autonomousRunning.value = false
+      setProcess('idle', 'En reposo (Idle) — Checkpoint de Autonomía', 'Esperando autorización del auditor para continuar.')
+      autonomousModal.value?.showModal()
+    }
+  } catch (err) {
+    error.value = err.message
+    autonomousRunning.value = false
+    setProcess('idle', 'En reposo (Idle)', 'Ciclo autónomo detenido por error o límite.')
+  }
+}
+
+function stopAutonomous() {
+  autonomousRunning.value = false
+  autonomousCyclesRemaining.value = 0
+  autonomousModal.value?.close()
+  setProcess('idle', 'En reposo (Idle)', 'Aprendizaje autónomo pausado por el auditor.')
+}
+
 onMounted(async () => {
   setProcess('running', 'Sincronizando estado inicial', 'Cargando agente, memorias, versiones y telemetría...')
   const currentAgent = await fetchAgent()
@@ -680,6 +751,15 @@ onMounted(async () => {
             <span class="font-bold">{{ activeProcess.status === 'running' ? 'PROCESANDO:' : 'ESTADO:' }}</span>
             <span>{{ activeProcess.title }}</span>
           </div>
+
+          <button
+            v-if="autonomousRunning"
+            type="button"
+            @click="stopAutonomous"
+            class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold bg-rose-950 text-rose-300 border border-rose-700 hover:bg-rose-900 transition animate-pulse"
+          >
+            <span>⏹ Detener Autonomía (Paso {{ sessionCyclesCount + 1 }})</span>
+          </button>
 
           <span
             class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 font-mono">
@@ -970,27 +1050,26 @@ onMounted(async () => {
               <span v-else>⚡</span>
               <span>Indagar sobre tema de mayor curiosidad ({{ topInterest?.topic || 'C=' + (topInterest?.curiosity_score || 0.43) }})</span>
             </button>
-            <button type="button" @click="sendChat('¿Cuál es tu estado actual y qué rasgos tienes en tu modelo?')"
+            <button type="button" @click="sendChat('¿Qué formas prácticas y accesibles de obtener dinero podemos explorar hoy (sin cosas muy técnicas)?')"
+              :disabled="sendingChat"
+              class="px-2.5 py-1 rounded-full text-xs bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-700/80 transition disabled:opacity-50">
+              💡 ¿Qué otras formas prácticas de obtener dinero podemos explorar?
+            </button>
+            <button type="button" @click="sendChat('Explícame en palabras simples qué temas estás investigando ahora y qué ideas nuevas propones.')"
               :disabled="sendingChat"
               class="px-2.5 py-1 rounded-full text-xs bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-800/60 transition disabled:opacity-50">
-              ¿Cuál es tu estado actual y tus rasgos?
+              ¿Qué estás investigando ahora (en simple)?
             </button>
             <button type="button"
-              @click="sendChat('¿En qué versión de evolución estás y cómo ha sido tu historial de mejoras?')"
+              @click="sendChat('¿Qué has aprendido hasta ahora y cómo han cambiado tus ideas?')"
               :disabled="sendingChat"
               class="px-2.5 py-1 rounded-full text-xs bg-slate-900 hover:bg-slate-800 text-indigo-300 border border-indigo-800/60 transition disabled:opacity-50">
-              ¿En qué versión estás y cómo has evolucionado?
+              ¿Qué has aprendido hasta ahora?
             </button>
-            <button type="button"
-              @click="sendChat('¿Qué te da curiosidad ahora mismo y qué señales cognitivas tienes activas?')"
-              :disabled="sendingChat"
-              class="px-2.5 py-1 rounded-full text-xs bg-slate-900 hover:bg-slate-800 text-emerald-300 border border-emerald-800/60 transition disabled:opacity-50">
-              ¿Qué te da curiosidad y cómo calculas tu C?
-            </button>
-            <button type="button" @click="sendChat('¿Tienes hipótesis o recuerdos que quieras explorar o verificar?')"
+            <button type="button" @click="sendChat('¿Tienes hipótesis o ideas nuevas que quieras poner a prueba?')"
               :disabled="sendingChat"
               class="px-2.5 py-1 rounded-full text-xs bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-800/60 transition disabled:opacity-50">
-              ¿Tienes hipótesis o recuerdos que explorar?
+              ¿Qué hipótesis nuevas propones?
             </button>
           </div>
 
@@ -1344,6 +1423,114 @@ onMounted(async () => {
                   </span>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Centro de Aprendizaje Autónomo Supervisado (Fase 4 - Human-in-the-Loop) -->
+      <section class="space-y-6">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-purple-900/60 pb-4">
+          <div>
+            <div class="flex items-center gap-3">
+              <span class="h-3 w-3 rounded-full bg-purple-400 animate-pulse"></span>
+              <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                Centro de Aprendizaje Autónomo Supervisado
+                <span class="text-xs font-mono bg-purple-950 text-purple-300 px-2.5 py-0.5 rounded-full border border-purple-700">
+                  Human-in-the-Loop con Compuerta de Costo
+                </span>
+              </h2>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">
+              EXILIO-001 busca preguntas activas guiadas por su curiosidad, delibera con Gemini 2.5 Flash Lite, genera hipótesis y evoluciona sus versiones con parada obligatoria en cada checkpoint financiero.
+            </p>
+          </div>
+
+          <!-- Live State & Control Actions -->
+          <div class="flex flex-wrap items-center gap-3">
+            <button
+              v-if="!autonomousRunning"
+              type="button"
+              @click="startAutonomousCycle(1)"
+              class="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white shadow-sm transition flex items-center gap-1.5 font-mono"
+              title="Ejecutar 1 paso de aprendizaje autónomo y detenerse en el checkpoint"
+            >
+              <span>▶</span>
+              <span>Ejecutar 1 Paso Autónomo (~$0.00018 USD)</span>
+            </button>
+
+            <button
+              v-if="!autonomousRunning"
+              type="button"
+              @click="startAutonomousCycle(3)"
+              class="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-purple-950/90 hover:bg-purple-900 text-purple-200 border border-purple-700 transition flex items-center gap-1.5 font-mono"
+              title="Ejecutar una ráfaga supervisada de 3 pasos continuos con tope automático"
+            >
+              <span>⏩</span>
+              <span>Ráfaga de 3 Pasos (~$0.0006 USD)</span>
+            </button>
+
+            <button
+              v-if="autonomousRunning"
+              type="button"
+              @click="stopAutonomous"
+              class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white transition flex items-center gap-1.5 font-mono animate-pulse"
+            >
+              <span>⏹</span>
+              <span>Detener Autonomía</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Función & Ejemplos: Aprendizaje Autónomo Supervisado -->
+        <div class="bg-slate-900 border border-purple-950/80 rounded-xl p-4 text-xs space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <span class="text-xs font-mono font-bold text-purple-300 uppercase tracking-wider flex items-center gap-2">
+              <span>⚡</span> ¿Cómo opera la Autonomía con Compuerta de Costo?
+            </span>
+            <span class="text-[11px] font-mono text-slate-400">Presupuesto mensual: US$5.00 | Gemini 2.5 Flash Lite</span>
+          </div>
+          <p class="text-slate-300 leading-relaxed text-xs">
+            A diferencia de un bucle infinito que consumiría cuota sin control, este modo realiza iteraciones atómicas: toma el tema de mayor curiosidad (<code class="text-cyan-300 font-mono">C</code>), consulta la API de Gemini 2.5, persiste la conclusión como una memoria de tipo <code class="text-amber-300 font-mono">hypothesis</code> con certeza acotada en PostgreSQL, incrementa la versión de personalidad inmutable (<code class="text-purple-300 font-mono">vX ➔ vX+1</code>) y <strong class="text-white">se detiene en una compuerta interactiva</strong> para mostrarte exactamente el gasto incurrido y la propuesta para el siguiente ciclo.
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-3 pt-2 border-t border-slate-800 text-[11px] font-mono">
+            <div class="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
+              <span class="text-slate-400 block text-[10px]">Ciclos en Sesión:</span>
+              <span class="text-white font-bold text-base">{{ sessionCyclesCount }} pasos</span>
+              <span class="text-slate-500 block text-[10px]">Ejecutados bajo supervisión</span>
+            </div>
+
+            <div class="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
+              <span class="text-slate-400 block text-[10px]">Costo Sesión Actual:</span>
+              <span class="text-emerald-400 font-bold text-base">${{ Number(sessionCostAccumulated).toFixed(6) }} USD</span>
+              <span class="text-slate-500 block text-[10px]">Consumo acumulado hoy</span>
+            </div>
+
+            <div class="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
+              <span class="text-slate-400 block text-[10px]">Gasto Mensual EXILIO:</span>
+              <span class="text-cyan-300 font-bold text-base">
+                ${{ Number(chatTelemetry?.current_month_spend_usd || 0).toFixed(4) }} USD
+              </span>
+              <span class="text-slate-500 block text-[10px]">
+                Tope máx: ${{ Number(chatTelemetry?.monthly_budget_usd || 5).toFixed(2) }} USD
+              </span>
+            </div>
+
+            <div class="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
+              <span class="text-slate-400 block text-[10px]">Estado de Autonomía:</span>
+              <div class="flex items-center gap-1.5 pt-0.5">
+                <span
+                  :class="[
+                    'h-2 w-2 rounded-full',
+                    autonomousRunning ? 'bg-purple-400 animate-ping' : 'bg-slate-400'
+                  ]"
+                ></span>
+                <span :class="['font-bold', autonomousRunning ? 'text-purple-300' : 'text-slate-300']">
+                  {{ autonomousRunning ? `Iterando (${autonomousCyclesRemaining} rest.)` : 'En Espera / Checkpoint' }}
+                </span>
+              </div>
+              <span class="text-slate-500 block text-[10px]">Sin bucles ciegos</span>
             </div>
           </div>
         </div>
@@ -2189,6 +2376,136 @@ onMounted(async () => {
             <span v-else>✓</span>
             <span>{{ persistingFinding ? 'Persistiendo...' : 'Persistir en Memoria Autobiográfica' }}</span>
           </button>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- Modal: Checkpoint de Aprendizaje Autónomo (Fase 4 - Modo Autónomo Human-in-the-Loop) -->
+    <dialog
+      ref="autonomousModal"
+      closedby="any"
+      aria-labelledby="autonomousModalTitle"
+      @click="handleDialogClickFallback($event, autonomousModal)"
+      class="fixed inset-0 m-auto max-h-[90vh] overflow-y-auto rounded-2xl bg-slate-900 border border-purple-700/80 text-slate-100 p-6 max-w-2xl w-[calc(100%-2rem)] shadow-2xl backdrop:bg-slate-950/80 outline-none"
+    >
+      <div v-if="autonomousCheckpoint" class="space-y-4">
+        <!-- Header -->
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div class="flex items-center gap-2">
+            <span class="h-2.5 w-2.5 rounded-full bg-purple-400 animate-pulse"></span>
+            <h3 id="autonomousModalTitle" class="text-base font-bold text-white font-mono">
+              Checkpoint de Aprendizaje Autónomo: ¿Continuar?
+            </h3>
+          </div>
+          <button type="button" @click="autonomousModal?.close()" class="text-slate-400 hover:text-white text-lg">✕</button>
+        </div>
+
+        <!-- Función & Ejemplo Card (Explicación de la compuerta humana y costos) -->
+        <div class="p-3.5 rounded-lg bg-slate-950/90 border border-purple-900/60 text-xs space-y-1.5">
+          <span class="text-[10px] font-mono font-bold text-purple-400 uppercase block">¿Qué hace este Checkpoint? (Human-in-the-Loop)</span>
+          <p class="text-slate-300 text-[11px] leading-relaxed">
+            EXILIO-001 operó de manera autónoma ejecutando indagación con Gemini, formulando una hipótesis y evolucionando su versión con persistencia inmutable en PostgreSQL. El ciclo se detiene preventivamente aquí para mostrarte el costo exacto consumido y pedir tu autorización expresa antes de realizar cualquier llamada posterior.
+          </p>
+          <div class="text-[10px] font-mono text-slate-400 pt-1 border-t border-slate-800">
+            <strong>Regla de control ético:</strong> Cero bucles desbocados. Tú decides si continuar 1 paso, autorizar una ráfaga acotada (máx 3) o dejar al agente en reposo (Idle).
+          </div>
+        </div>
+
+        <!-- Resumen del Paso Completado -->
+        <div class="p-3.5 rounded-lg bg-slate-950 border border-slate-800 space-y-2.5 text-xs font-mono">
+          <div class="flex items-center justify-between">
+            <span class="text-slate-400 text-[11px]">Evolución de Versión:</span>
+            <div class="flex items-center gap-1.5">
+              <span class="px-2 py-0.5 rounded bg-slate-800 text-slate-400">v{{ autonomousCheckpoint.completed_step?.version_before }}.0</span>
+              <span class="text-purple-400 font-bold">➔</span>
+              <span class="px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-700 font-bold">
+                v{{ autonomousCheckpoint.completed_step?.version_after }}.0
+              </span>
+            </div>
+          </div>
+
+          <div class="space-y-1">
+            <span class="text-slate-400 text-[11px] block">Tópico investigado:</span>
+            <span class="text-slate-100 font-bold font-sans text-xs">{{ autonomousCheckpoint.completed_step?.topic }}</span>
+          </div>
+
+          <!-- Hipótesis persistida -->
+          <div class="p-2.5 rounded bg-amber-950/20 border border-amber-800/80 space-y-1 text-xs">
+            <div class="flex items-center justify-between">
+              <span class="text-[10px] uppercase font-bold text-amber-300">Hipótesis persistida en PostgreSQL:</span>
+              <span class="px-1.5 py-0.5 rounded text-[10px] bg-amber-950 text-amber-200 border border-amber-800">
+                Certeza: {{ (autonomousCheckpoint.completed_step?.confidence * 100).toFixed(0) }}%
+              </span>
+            </div>
+            <p class="text-slate-200 font-sans italic text-[11px]">
+              "{{ autonomousCheckpoint.completed_step?.hypothesis_content }}"
+            </p>
+          </div>
+        </div>
+
+        <!-- Telemetría y Costo del Paso -->
+        <div class="p-3.5 rounded-lg bg-slate-950 border border-slate-800 space-y-2 text-xs">
+          <span class="text-[10px] font-mono uppercase font-bold text-slate-400 block">Auditoría Financiera del Ciclo (Presupuesto US$5.00/mes):</span>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 font-mono text-[11px]">
+            <div class="p-2 rounded bg-slate-900 border border-slate-800">
+              <span class="text-slate-500 block text-[10px]">Costo de este paso:</span>
+              <span class="text-emerald-400 font-bold text-xs">${{ Number(autonomousCheckpoint.completed_step?.cost_usd || 0).toFixed(6) }} USD</span>
+              <span class="text-slate-500 block text-[9px] mt-0.5">({{ autonomousCheckpoint.completed_step?.tokens_used }} tokens)</span>
+            </div>
+            <div class="p-2 rounded bg-slate-900 border border-slate-800">
+              <span class="text-slate-500 block text-[10px]">Gasto acumulado mes:</span>
+              <span class="text-cyan-300 font-bold text-xs">${{ Number(autonomousCheckpoint.budget_telemetry?.current_month_spend_usd || 0).toFixed(4) }} USD</span>
+              <span class="text-slate-500 block text-[9px] mt-0.5">de ${{ Number(autonomousCheckpoint.budget_telemetry?.monthly_budget_usd || 5).toFixed(2) }} USD</span>
+            </div>
+            <div class="p-2 rounded bg-slate-900 border border-slate-800">
+              <span class="text-slate-500 block text-[10px]">Presupuesto restante:</span>
+              <span class="text-purple-300 font-bold text-xs">${{ Number(autonomousCheckpoint.budget_telemetry?.remaining_budget_usd || 5).toFixed(4) }} USD</span>
+              <span class="text-slate-500 block text-[9px] mt-0.5">Compuerta activa</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Propuesta para el Próximo Paso -->
+        <div class="p-3.5 rounded-lg bg-indigo-950/20 border border-indigo-900/60 space-y-2 text-xs">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-mono uppercase font-bold text-indigo-300">Próximo paso propuesto por EXILIO-001:</span>
+            <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-indigo-950 text-indigo-200 border border-indigo-800">
+              Costo estimado: ~${{ Number(autonomousCheckpoint.next_step_proposal?.estimated_cost_usd || 0.00018).toFixed(5) }} USD
+            </span>
+          </div>
+          <p class="text-indigo-100 font-sans text-xs bg-slate-950/70 p-2.5 rounded border border-indigo-900/40">
+            "{{ autonomousCheckpoint.next_step_proposal?.proposed_query }}"
+          </p>
+        </div>
+
+        <!-- Botones de Acción (Human-in-the-Loop decision) -->
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-800">
+          <button
+            type="button"
+            @click="stopAutonomous"
+            class="w-full sm:w-auto px-4 py-2 rounded-lg text-xs font-mono bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+          >
+            ⏸ Pausar y pasar a Reposo (Idle)
+          </button>
+
+          <div class="flex flex-wrap items-center gap-2.5 w-full sm:w-auto justify-end">
+            <button
+              type="button"
+              @click="startAutonomousCycle(3)"
+              class="flex-1 sm:flex-initial px-3.5 py-2 rounded-lg text-xs font-mono font-semibold bg-purple-950/90 hover:bg-purple-900 text-purple-200 border border-purple-700 transition shadow-sm"
+              title="Ejecutar 3 pasos automáticos antes de volver a preguntar"
+            >
+              ⏩ Ráfaga de 3 pasos (~$0.0006 USD)
+            </button>
+            <button
+              type="button"
+              @click="startAutonomousCycle(1)"
+              class="flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-mono font-bold bg-purple-600 hover:bg-purple-500 text-white transition shadow-sm flex items-center gap-1.5"
+            >
+              <span>▶</span>
+              <span>Continuar 1 paso (~$0.00018 USD)</span>
+            </button>
+          </div>
         </div>
       </div>
     </dialog>

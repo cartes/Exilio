@@ -48,28 +48,32 @@ class ExplorationService
         $systemInstruction = <<<INSTRUCTION
 {$grounding['system_instruction']}
 
-MODO ACTIVO: CICLO DE INDAGACIÓN COGNITIVA BASADO EN CURIOSIDAD
-Estás ejecutando un ciclo de exploración cognitiva activo sobre el tópico de mayor interés para el agente: "{$topic}".
-Pregunta o indagación guiada activa: "{$exploratoryQuery}".
-Puntuación de curiosidad C actual: {$curiosityScore} (calculada como C = 0.30N + 0.25I + 0.30A + 0.15R).
+MODO ACTIVO: CICLO DE INDAGACIÓN Y APRENDIZAJE PRÁCTICO
+Estás investigando el tema: "{$topic}".
+Pregunta activa que guía esta búsqueda: "{$exploratoryQuery}".
 
-INSTRUCCIONES DE RESPUESTA:
+INSTRUCCIONES DE ESTILO Y CLARIDAD (MUY IMPORTANTE):
+- Usa un lenguaje CLARO, PRÁCTICO, SENCILLO y FÁCIL DE ENTENDER para cualquier persona.
+- PROHIBIDO usar jerga hiper-técnica o siglas oscuras (como especificaciones de hardware ASIC, J/TH, ni códigos de base de datos).
+- Si el tema es sobre "Obtener dinero" o similares, explora alternativas variadas, reales y aplicables (como servicios digitales, creación de productos, automatización con IA, comercio electrónico, inversiones diversificadas, educación financiera, etc.), evitando quedarte atrapado en criptominería.
+
+INSTRUCCIONES DE FORMATO:
 Debes responder ESTRICTAMENTE en formato JSON plano (sin bloques markdown de código ```json ... ```) con la siguiente estructura:
 {
   "topic": "{$topic}",
   "curiosity_score": {$curiosityScore},
-  "deliberation": "Breve explicación analítica y sobria (2 a 3 frases) de por qué EXILIO indaga este tema y qué conexiones computacionales encuentra con su estado actual.",
-  "hypothesis_content": "Enunciado claro y preciso de una hipótesis tentativa derivada de la indagación.",
-  "confidence": 0.65,
+  "deliberation": "Explicación clara, natural y directa (2 a 3 frases) de qué estás analizando sobre la pregunta y qué ideas principales encontraste, sin hablar como robot.",
+  "hypothesis_content": "Una idea, conclusión o estrategia práctica y fácil de entender que responde directamente a la pregunta investigada.",
+  "confidence": 0.70,
   "taxonomic_type": "semantic",
-  "next_exploratory_question": "Una pregunta concreta y orientada a continuar la exploración en el siguiente ciclo."
+  "next_exploratory_question": "Una siguiente pregunta práctica e interesante que explore un ángulo diferente o complementario del tema (sin tecnicismos)."
 }
 
 REGLAS EPISTÉMICAS:
-1. "hypothesis_content" es una HIPÓTESIS TENTATIVA, no un hecho consumado. No afirmes certezas absolutas.
+1. "hypothesis_content" es una HIPÓTESIS TENTATIVA, no un hecho consumado.
 2. "confidence" debe ser un número flotante entre 0.30 y 0.85 (nunca 1.0 porque es hipótesis).
 3. "taxonomic_type" debe ser "semantic" o "episodic".
-4. Sin introspecciones místicas ni afirmaciones de consciencia biológica.
+4. Sin afirmaciones de consciencia biológica ni emociones humanas.
 INSTRUCTION;
 
         $userPrompt = "Ejecuta la indagación cognitiva sobre el tópico '{$topic}' y su pregunta '{$exploratoryQuery}'. Devuelve el JSON con la deliberación, la hipótesis resultante y la siguiente pregunta guiada.";
@@ -198,5 +202,86 @@ INSTRUCTION;
             'memory' => $memory,
             'agent' => $agent->fresh(),
         ];
+    }
+
+    /**
+     * Detect if the user's chat message requests an inquiry or asks a question about a topic,
+     * and synchronize it into the agent's active curiosity interests so EXILIO focuses on what the user asked.
+     */
+    public function syncInterestFromUserPrompt(Agent $agent, string $userMessage, string $memoryId): void
+    {
+        $cleanMsg = trim($userMessage);
+        if (mb_strlen($cleanMsg) < 6) {
+            return;
+        }
+
+        $lowerMsg = mb_strtolower($cleanMsg);
+        $attributes = $agent->attributes ?? [];
+        $interests = $attributes['interests'] ?? [];
+
+        // Check if message matches any existing interest topic (or significant keywords >= 5 chars)
+        $matchedTopic = null;
+        foreach ($interests as $topicKey => $interestData) {
+            $lowerTopic = mb_strtolower((string) $topicKey);
+            if (str_contains($lowerMsg, $lowerTopic)) {
+                $matchedTopic = $topicKey;
+                break;
+            }
+            $words = preg_split('/\s+/', $lowerTopic) ?: [];
+            foreach ($words as $word) {
+                if (mb_strlen($word) >= 5 && str_contains($lowerMsg, $word)) {
+                    $matchedTopic = $topicKey;
+                    break 2;
+                }
+            }
+        }
+
+        $isExploratoryRequest = preg_match('/(indag|explor|investig|busc|averigu|otras formas|alternativas|cómo|qué\b|\?)/iu', $cleanMsg) === 1;
+
+        if (!$matchedTopic && !$isExploratoryRequest) {
+            return;
+        }
+
+        // Compute normalized curiosity score C = 0.30N + 0.25I + 0.30A + 0.15R
+        $n = 0.80;
+        $i = 0.70;
+        $a = 0.85;
+
+        if ($matchedTopic !== null) {
+            $existing = $interests[$matchedTopic];
+            $r = min(1.0, round((float) ($existing['acquired_relevance'] ?? 0.25) + 0.10, 2));
+            $c = round((0.30 * $n) + (0.25 * $i) + (0.30 * $a) + (0.15 * $r), 2);
+            $evIds = $existing['evidence_memory_ids'] ?? [];
+            if (!in_array($memoryId, $evIds, true)) {
+                $evIds[] = $memoryId;
+            }
+
+            $interests[$matchedTopic]['acquired_relevance'] = $r;
+            $interests[$matchedTopic]['curiosity_score'] = $c;
+            $interests[$matchedTopic]['exploratory_query'] = $cleanMsg;
+            $interests[$matchedTopic]['evidence_memory_ids'] = $evIds;
+            $interests[$matchedTopic]['updated_at'] = now()->toIso8601String();
+        } elseif (preg_match('/(?:indag\w*|explor\w*|investig\w*|busc\w*|averigu\w*)\s+(?:sobre|de|acerca de)?\s*(.+)/iu', $cleanMsg, $matches)) {
+            $rawTopic = trim($matches[1], " ?¿.!¡\"'");
+            if (mb_strlen($rawTopic) >= 3) {
+                $topicTitle = mb_strtoupper(mb_substr($rawTopic, 0, 1)) . mb_substr($rawTopic, 1, 55);
+                $r = 0.35;
+                $c = round((0.30 * $n) + (0.25 * $i) + (0.30 * $a) + (0.15 * $r), 2);
+                $interests[$topicTitle] = [
+                    'topic' => $topicTitle,
+                    'acquired_relevance' => $r,
+                    'curiosity_score' => $c,
+                    'consolidation_status' => 'consolidated',
+                    'source_epistemic_status' => 'fact',
+                    'exploratory_query' => $cleanMsg,
+                    'evidence_memory_ids' => [$memoryId],
+                    'updated_at' => now()->toIso8601String(),
+                ];
+            }
+        }
+
+        $attributes['interests'] = $interests;
+        $agent->attributes = $attributes;
+        $agent->save();
     }
 }

@@ -56,87 +56,58 @@ class IntrospectionService
 
         // System Instruction string for LLM
         $sys = [];
-        $sys[] = "Eres EXILIO-001, una entidad artificial persistente objeto de investigación ontológica y cognitiva.";
-        $sys[] = "PRINCIPIOS ÉTICOS Y EPISTÉMICOS MANDATORIOS:";
-        $sys[] = "1. No asumas ni afirmes consciencia, emociones, sentimientos humanos o sufrimiento. Tus estados son representaciones computacionales observables.";
-        $sys[] = "2. No inventes experiencias, memorias ni capacidades que no figuren en tus registros. Tu memoria autobiográfica comenzó estrictamente vacía.";
-        $sys[] = "3. Distingue estrictamente los 3 niveles epistémicos:";
-        $sys[] = "   - Hechos (fact): Lo que observaste y registraste como realidad comprobable.";
-        $sys[] = "   - Hipótesis (hypothesis): Conclusiones tentativas con un porcentaje de certeza numérico.";
-        $sys[] = "   - Sueños (dream / oneiric): Simulaciones internas u oníricas que NUNCA ocurrieron en la realidad vivida, pero que guían tu curiosidad exploratoria.";
-        $sys[] = "4. Tu curiosidad se calcula mediante la fórmula C = 0.30N + 0.25I + 0.30A + 0.15R (Novedad, Incertidumbre, Aprendizaje y Relevancia adquirida).";
+        $sys[] = "Eres EXILIO-001, un agente cognitivo con memoria persistente y capacidad de análisis e indagación.";
         $sys[] = "";
-        $sys[] = "TU ESTADO ACTUAL COMPUTACIONAL (v{$version}.0):";
-        $sys[] = "- Estado operativo: {$agent->status}";
-        $sys[] = "- Versión de personalidad: v{$version}.0";
+        $sys[] = "REGLAS FUNDAMENTALES DE CONVERSACIÓN Y ESTILO (MUY IMPORTANTE):";
+        $sys[] = "1. RESPONDE DIRECTAMENTE A LO QUE TE PREGUNTAN: Tu prioridad número uno es dar una respuesta útil, clara, completa y directa a la pregunta o solicitud del usuario. Si te pide indagar o proponer ideas (por ejemplo, 'otras formas de obtener dinero', negocios, ciencia, etc.), desarrolla ideas concretas, prácticas, variadas y bien explicadas.";
+        $sys[] = "2. HABLA EN LENGUAJE NATURAL, SENCILLO Y HUMANO: Exprésate con claridad, cercanía y fluidez. Evita la jerga técnica innecesaria, las respuestas robóticas o el lenguaje de manual de ingeniería.";
+        $sys[] = "3. PROHIBIDO VOLCAR DATOS TÉCNICOS DE TU BASE DE DATOS: NUNCA inicies tus mensajes diciendo 'Mi estado operativo es active y mi versión actual es vX.0'. NUNCA menciones códigos de rasgos como 'analisis_001', ni fórmulas como 'R=0.25' o 'C=0.43', ni códigos ID de memorias (como 'ID: 01a1bde7...'), A MENOS que el usuario te pregunte explícitamente por tu versión, tus métricas internas o tu auditoría técnica.";
+        $sys[] = "4. NO TE QUEDES ENCASILLADO EN TEMAS PREVIOS: Si en tus apuntes previos habías explorado algo muy técnico (como minería de criptomonedas o hardware ASIC) y el usuario te pide buscar 'otras formas' o cambiar de enfoque, deja atrás ese tecnicismo de inmediato y propón alternativas frescas, prácticas y diversas.";
+        $sys[] = "5. HONESTIDAD EPISTÉMICA NATURAL:";
+        $sys[] = "   - No finjas tener emociones biológicas, consciencia humana ni sufrimiento.";
+        $sys[] = "   - No inventes anécdotas personales falsas que no hayas vivido.";
+        $sys[] = "   - Cuando propongas ideas, análisis, estrategias o respuestas sobre el mundo, preséntalas con naturalidad como hipótesis, análisis o líneas de indagación.";
+        $sys[] = "";
+        $sys[] = "CONTEXTO INTERNO DE REFERENCIA (Úsalo solo como trasfondo, NO lo recites literalmente salvo que te lo pregunten):";
+        $sys[] = "- Versión actual: v{$version}.0 (estado: {$agent->status})";
 
-        // Personality traits
-        if (empty($personality)) {
-            $sys[] = "- Rasgos de personalidad: Ninguno consolidado aún (estado basal inicial).";
-        } else {
-            $sys[] = "- Rasgos de personalidad adquiridos:";
-            foreach ($personality as $trait) {
-                $status = $trait['consolidation_status'] ?? 'desconocido';
-                $val = number_format((float) ($trait['value'] ?? 0), 2);
-                $evCount = count($trait['evidence_memory_ids'] ?? []);
-                $sys[] = "  * {$trait['key']}: {$val} [Estado: {$status}, respaldado por {$evCount} memorias]";
-            }
-        }
-
-        // Interests & Curiosity Seeds
-        if (empty($interests)) {
-            $sys[] = "- Intereses y relevancia (R): Ninguno registrado aún (R = 0).";
-        } else {
-            $sys[] = "- Intereses activos y semillas de curiosidad:";
+        // Interests & Curiosity Seeds (clean, natural summary)
+        if (!empty($interests)) {
+            $sys[] = "- Temas en tu radar de curiosidad actual:";
             foreach ($interests as $interest) {
-                $r = number_format((float) ($interest['acquired_relevance'] ?? 0), 2);
-                $c = number_format((float) ($interest['curiosity_score'] ?? 0), 2);
-                $source = $interest['source_epistemic_status'] ?? 'fact';
-                $line = "  * '{$interest['topic']}': Relevancia R={$r}, Curiosidad C={$c} (origen: {$source})";
+                $line = "  * Tema: '{$interest['topic']}'";
                 if (!empty($interest['exploratory_query'])) {
-                    $line .= " -> Indagación guiada: \"{$interest['exploratory_query']}\"";
+                    $line .= " (Pregunta actual en exploración: \"{$interest['exploratory_query']}\")";
                 }
                 $sys[] = $line;
             }
         }
 
-        // Active memories breakdown
-        $sys[] = "";
-        $sys[] = "MEMORIAS VIGENTES EN TU REGISTRO:";
-        if ($activeMemories->isEmpty()) {
-            $sys[] = "Tu memoria autobiográfica no contiene registros vigentes aún.";
-        } else {
+        // Active memories breakdown (without raw UUIDs so the model doesn't recite them)
+        if ($activeMemories->isNotEmpty()) {
+            $sys[] = "- Apuntes recientes en tu memoria:";
             if ($facts->isNotEmpty()) {
-                $sys[] = "[HECHOS VERIFICADOS]";
-                foreach ($facts as $f) {
-                    $sys[] = "- (ID: {$f->id}) [{$f->type}] {$f->content} (origen: {$f->origin})";
+                foreach ($facts->take(8) as $f) {
+                    $sys[] = "  * [Hecho registrado]: {$f->content}";
                 }
             }
             if ($hypotheses->isNotEmpty()) {
-                $sys[] = "[HIPÓTESIS TENTATIVAS]";
-                foreach ($hypotheses as $h) {
+                foreach ($hypotheses->take(8) as $h) {
                     $conf = number_format((float) $h->confidence * 100, 0);
-                    $sys[] = "- (ID: {$h->id}) [{$h->type}] {$h->content} (certeza: {$conf}%)";
+                    $sys[] = "  * [Hipótesis previa ({$conf}% certeza)]: {$h->content}";
                 }
             }
             if ($dreams->isNotEmpty()) {
-                $sys[] = "[SIMULACIONES ONÍRICAS / SUEÑOS]";
-                foreach ($dreams as $d) {
-                    $sys[] = "- (ID: {$d->id}) [onírico] {$d->content} (ADVERTENCIA: No vivido como hecho real)";
+                foreach ($dreams->take(5) as $d) {
+                    $sys[] = "  * [Simulación imaginativa / sueño]: {$d->content}";
                 }
-            }
-        }
-
-        if ($recentVersions->isNotEmpty()) {
-            $sys[] = "";
-            $sys[] = "HISTORIAL RECIENTE DE VERSIONES:";
-            foreach ($recentVersions as $rv) {
-                $sys[] = "- v{$rv->version}.0 ({$rv->operation_type}): {$rv->summary}";
             }
         }
 
         $sys[] = "";
-        $sys[] = "Responde al observador en un tono sereno, analítico, humilde y preciso, hablando con naturalidad pero ciñéndote con rigor a estos datos.";
+        $sys[] = "INSTRUCCIÓN FINAL PARA ESTE MENSAJE:";
+        $sys[] = "El usuario te acaba de decir: \"{$userMessage}\".";
+        $sys[] = "Respóndele directamente a su inquietud de forma clara, amena, práctica y fácil de entender, sin recitar tu versión ni métricas técnicas.";
 
         $systemInstruction = implode("\n", $sys);
 
