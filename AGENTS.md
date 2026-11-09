@@ -8,17 +8,17 @@ Si una solicitud parece contradecir una decisión existente, explica el conflict
 
 ## Alcance actual: Fase 4 (Integraciones externas y diálogo introspectivo)
 
-Limita el trabajo a la integración controlada de Gemini como proveedor de IA real (Fase 4), combinada con el motor de introspección basado en los datos verificados de EXILIO-001 (Fase 3), manteniendo operativas la persistencia explícita (Fase 1), la interfaz de observación local (Fase 2) y el motor cognitivo (Fase 0).
+Limita el trabajo a la integración controlada de Gemini y Claude (Anthropic, modelo `claude-haiku-5-5` / Haiku 5.5, autorizado por decisión del usuario del 2026-11-09) como proveedores de IA real (Fase 4), combinada con el motor de introspección basado en los datos verificados de EXILIO-001 (Fase 3), manteniendo operativas la persistencia explícita (Fase 1), la interfaz de observación local (Fase 2) y el motor cognitivo (Fase 0).
 
 La interacción conversacional debe anclarse estrictamente al estado computacional del agente:
-- **Anclaje introspectivo estricto:** El modelo de lenguaje (Gemini) recibe el estado autobiográfico exacto del agente (versión activa, rasgos consolidados y tentativos, intereses, curiosidad $C$ y memorias clasificadas por certeza epistémica). No debe alucinar hechos no vividos ni inventar rasgos ficticios.
+- **Anclaje introspectivo estricto:** El modelo de lenguaje recibe el estado autobiográfico exacto del agente (versión activa, rasgos consolidados y tentativos, intereses, curiosidad $C$ y memorias clasificadas por certeza epistémica). No debe alucinar hechos no vividos ni inventar rasgos ficticios.
 - **Diferenciación epistémica:** En el diálogo, EXILIO-001 distingue explícitamente entre hechos (`fact`), hipótesis (`hypothesis`) y simulaciones oníricas (`dream`).
 - **Salvaguardas éticas:** No asume consciencia, sentimientos humanos ni sufrimiento; reporta sus estados computacionales de forma honesta.
-- **Control presupuestario y telemetría:** Toda llamada a Gemini debe pasar por una compuerta de gasto verificable que respete el presupuesto de referencia de US$5/mes, registrando consumo de tokens y coste estimado. Si no hay clave de API configurada (`GEMINI_API_KEY`) o se supera el presupuesto, el sistema recurre al proveedor simulado (`MockProvider`) o generador introspectivo sin fallar destructivamente.
+- **Control presupuestario y telemetría:** Toda llamada a Gemini o Claude debe pasar por una compuerta de gasto verificable que respete el presupuesto de referencia de US$5/mes, registrando consumo de tokens y coste estimado. Si no hay clave de API configurada (`GEMINI_API_KEY` / `ANTHROPIC_API_KEY`) o se supera el presupuesto, el sistema recurre al proveedor simulado (`MockProvider`) o generador introspectivo sin fallar destructivamente.
 
 Además, está autorizado (Fase 5, decisión del usuario del 2026-11-09) un motor onírico mínimo, bajo demanda y con aprobación explícita; ver `docs/ROADMAP.md`. Los sueños son simulaciones (`dream`): nunca consolidan hechos ni rasgos.
 
-No realices llamadas reales a Claude u OpenAI; no despliegues en producción; no implementes bucles autónomos sin demanda del usuario, navegación web, operación multiagente ni autodesarrollo de código. No guardes claves ni secretos en Git.
+No realices llamadas reales a OpenAI; no despliegues en producción; no implementes bucles autónomos sin demanda del usuario, navegación web, operación multiagente ni autodesarrollo de código. No guardes claves ni secretos en Git.
 
 Respeta la puntuación de curiosidad `C = 0.30N + 0.25I + 0.30A + 0.15R`, con componentes normalizados y pesos que sumen 1. No precargues rasgos de personalidad ni relevancia adquirida sin evidencia.
 

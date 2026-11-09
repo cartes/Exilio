@@ -52,10 +52,10 @@ La arquitectura integra Gemini mediante un patrón híbrido de introspección co
   - Intereses activos, relevancia adquirida $R \in [0, 1]$, cálculo de curiosidad $C$ y semillas oníricas con preguntas exploratorias (`exploratory_query`).
   - Memorias recientes organizadas según la diferenciación epistémica (`fact`, `hypothesis` con certeza %, `dream` con advertencia onírica).
   - Auditoría de evidencia obsoleta o purgada.
-- **Adaptador Gemini y Compuerta Presupuestaria (`GeminiService` y `cognitive-engine/providers/gemini.py`):**
-  - Conexión vía API REST a Gemini (`gemini-2.5-flash` / `gemini-1.5-flash`) usando `GEMINI_API_KEY`.
-  - Compuerta de gasto: Verifica el consumo acumulado mensual en `ai_usage_logs`. Si supera los US$5.00/mes o no hay clave, activa un fallback seguro al generador introspectivo local o `MockProvider`.
-  - Telemetría: Registra cada llamada con tokens de entrada, salida, coste estimado en USD y timestamp.
+- **Adaptadores de IA y Compuerta Presupuestaria (`GeminiService`, `ClaudeService`, `cognitive-engine/providers/`):**
+  - Conexión vía API REST a Gemini (`gemini-2.5-flash-lite`) y Claude Anthropic (`claude-haiku-5-5` / Haiku 5.5, autorizado por decisión del usuario del 2026-11-09) usando `GEMINI_API_KEY` o `ANTHROPIC_API_KEY`.
+  - Compuerta de gasto: Verifica el consumo acumulado mensual en `ai_usage_logs`. Si supera los US$5.00/mes o no hay clave configurada, activa un fallback seguro al generador introspectivo local o `MockProvider`.
+  - Telemetría: Registra cada llamada con tokens de entrada, salida, coste estimado en USD y timestamp tanto para Gemini como para Claude.
 - **Endpoints de Diálogo (`backend/routes/api.php`):**
   - `POST /api/agents/{agent}/chat`: Procesa el mensaje del observador, persiste la memoria episódica (`user_input`), ejecuta la respuesta fundamentada con Gemini y devuelve la respuesta junto a la telemetría y metadatos de fundamentación.
   - `GET /api/agents/{agent}/chat`: Retorna el historial de interacción.

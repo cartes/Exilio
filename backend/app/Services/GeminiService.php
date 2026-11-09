@@ -45,7 +45,18 @@ class GeminiService
             ->where('created_at', '>=', now()->startOfMonth())
             ->sum('estimated_cost_usd');
 
-        // 1. Budget Gate Check
+        // 1. If provider is Claude (Anthropic), delegate directly to ClaudeService
+        if ($providerConfig === 'claude') {
+            return app(ClaudeService::class)->generateResponse(
+                $agent,
+                $userMessage,
+                $systemInstruction,
+                $fallbackResponse,
+                $groundingData
+            );
+        }
+
+        // 2. Budget Gate Check
         if ($currentMonthSpend >= $monthlyBudget) {
             $budgetMsg = "[LÍMITE PRESUPUESTARIO ALCANZADO: US\${$monthlyBudget}/mes] " . $fallbackResponse;
             return [

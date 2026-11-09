@@ -103,6 +103,17 @@ const topInterest = computed(() => {
   return [...list].sort((a, b) => (b.curiosity_score || 0) - (a.curiosity_score || 0))[0]
 })
 
+const activeProviderLabel = computed(() => {
+  const p = chatTelemetry.value?.active_provider
+  if (p === 'claude') {
+    return 'Claude Haiku 5.5 (Anthropic)'
+  }
+  if (p === 'gemini') {
+    return 'Gemini 2.5 Flash Lite'
+  }
+  return 'Introspección Local (Mock)'
+})
+
 const activeMemories = computed(() => {
   return memories.value.filter(m => !m.superseded_at)
 })
@@ -1110,8 +1121,7 @@ onMounted(async () => {
 
           <div
             class="p-3 rounded-lg bg-slate-950/60 border border-slate-800/60 flex flex-wrap items-center justify-between text-xs text-slate-400 gap-2">
-            <span>Proveedor activo: <strong class="text-cyan-300 font-mono">Gemini 2.5 Flash / Introspección
-                Local</strong></span>
+            <span>Proveedor activo: <strong class="text-cyan-300 font-mono">{{ activeProviderLabel }}</strong></span>
             <span>
               Presupuesto ref.: <strong class="text-slate-200 font-mono">US$5.00/mes</strong>
               <span v-if="chatTelemetry" class="text-emerald-400 ml-1">
@@ -1126,7 +1136,7 @@ onMounted(async () => {
         </div>
       </details>
 
-      <!-- Consola de Diálogo Introspectivo con EXILIO-001 (Fase 4 - Gemini) -->
+      <!-- Consola de Diálogo Introspectivo con EXILIO-001 (Fase 4 - IA) -->
       <section class="space-y-6">
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
           <div>
@@ -1135,7 +1145,7 @@ onMounted(async () => {
               <span
                 class="text-xs font-mono bg-cyan-950 text-cyan-300 px-2.5 py-0.5 rounded-full border border-cyan-800 flex items-center gap-1.5">
                 <span class="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-ping"></span>
-                Gemini 2.5 Flash / Anclaje Epistémico
+                {{ activeProviderLabel }} / Anclaje Epistémico
               </span>
             </h2>
             <p class="text-xs text-slate-400 mt-0.5">
@@ -1729,7 +1739,7 @@ onMounted(async () => {
             <span class="text-xs font-mono font-bold text-purple-300 uppercase tracking-wider flex items-center gap-2">
               <span>⚡</span> ¿Cómo opera la Autonomía con Compuerta de Costo?
             </span>
-            <span class="text-[11px] font-mono text-slate-400">Presupuesto mensual: US$5.00 | Gemini 2.5 Flash Lite</span>
+            <span class="text-[11px] font-mono text-slate-400">Presupuesto mensual: US$5.00 | {{ activeProviderLabel }}</span>
           </div>
           <p class="text-slate-300 leading-relaxed text-xs">
             A diferencia de un bucle infinito que consumiría cuota sin control, este modo realiza iteraciones atómicas: toma el tema de mayor curiosidad (<code class="text-cyan-300 font-mono">C</code>), consulta la API de Gemini 2.5, persiste la conclusión como una memoria de tipo <code class="text-amber-300 font-mono">hypothesis</code> con certeza acotada en PostgreSQL, incrementa la versión de personalidad inmutable (<code class="text-purple-300 font-mono">vX ➔ vX+1</code>) y <strong class="text-white">se detiene en una compuerta interactiva</strong> para mostrarte exactamente el gasto incurrido y la propuesta para el siguiente ciclo.
